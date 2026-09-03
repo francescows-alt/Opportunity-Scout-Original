@@ -11,7 +11,10 @@ and the latest Git history before changing anything.
 - Do not require an employer to call a role a "graduation" or "thesis" internship.
   Judge whether the real dates can cover February–June 2027. Longer can fit;
   shorter needs clarification.
-- Keep the vacancy's written language separate from its stated Japanese requirement.
+- Language rule: when the whole substantive announcement is in Japanese and no
+  exact Japanese level is stated, classify and visibly label it `Japanese-only
+  (inferred)`. Keep it in the main list for reference. Do not confuse this
+  inference with an employer explicitly requiring native fluency.
 - Exclude candidate-paid placement programs; do not confuse these with relocation costs.
 - Preserve expired opportunities but label them clearly.
 - Prevent duplicate companies/roles across repeated search cycles.

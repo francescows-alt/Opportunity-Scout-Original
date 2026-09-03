@@ -277,6 +277,7 @@ class Opportunity(models.Model):
     japanese_requirement = models.CharField(max_length=240, blank=True)
     posting_language = models.CharField(max_length=40, blank=True)
     posting_language_note = models.CharField(max_length=300, blank=True)
+    japanese_only_inferred = models.BooleanField(default=False)
     visa_support = models.CharField(max_length=240, blank=True)
     thesis_compatibility = models.CharField(max_length=240, blank=True)
     requirements_assessment = models.JSONField(default=list, blank=True)

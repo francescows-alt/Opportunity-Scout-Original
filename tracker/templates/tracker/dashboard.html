@@ -1,6 +1,7 @@
 {% extends "tracker/base.html" %}
 
 {% block content %}
+{% if not selected %}
 <section class="dashboard-heading">
     <div><h1>Applications</h1><p class="lede">{% now "l, j F" %}{% if active_campaign %} · {{ active_campaign.name }}{% endif %}</p></div>
     <a class="button secondary add-button" href="{% url 'inbox' %}">＋<span>Quick add</span></a>
@@ -16,13 +17,17 @@
     </div>
     {% else %}<a class="button primary" href="{% url 'campaign-create' %}">Create search first</a>{% endif %}
 </section>
+{% endif %}
 
+{% if not selected or active_search_job %}
 <section class="search-progress-panel{% if active_search_job %} active{% else %} idle{% endif %}" data-search-progress>
     <div class="search-progress-heading"><span class="robert-search-orb">R</span><div><strong data-search-stage>{% if active_search_job %}{{ active_search_job.message }}{% else %}Robert is ready for a complete search{% endif %}</strong><small>{% if active_search_job %}Live progress — you can leave this page open{% else %}Press “Find &amp; research internships” to start{% endif %}</small></div><b data-search-percent>{% if active_search_job %}{{ active_search_job.progress }}{% else %}Ready{% endif %}</b></div>
     <div class="search-progress-track"><span data-search-bar style="width:{% if active_search_job %}{{ active_search_job.progress }}{% else %}0{% endif %}%"></span></div>
     <div class="search-stage-dots"><span data-stage="searching">Search</span><span data-stage="checking">Checks</span><span data-stage="researching">Research</span><span data-stage="saving">Save</span><span data-stage="complete">Done</span></div>
 </section>
+{% endif %}
 
+{% if not selected %}
 {% if completed_search_job %}<div class="search-result-banner"><span>✓</span><div><strong>Robert finished the full cycle</strong><p>{{ completed_search_job.researched_count }} researched · {{ completed_search_job.added_count }} added · {{ completed_search_job.duplicate_count }} duplicates blocked · {{ completed_search_job.fee_blocked_count }} fee programs excluded</p></div></div>{% endif %}
 
 <section class="stats-grid" aria-label="Application totals">
@@ -32,6 +37,7 @@
 <nav class="review-tabs" aria-label="Opportunity review groups">
     <a class="{% if not current_review %}current{% endif %}" href="{% url 'dashboard' %}">All <span>{{ tracked_count }}</span></a><a class="{% if current_review == 'serious' %}current{% endif %}" href="?review=serious">Serious list <span>{{ serious_count }}</span></a><a class="{% if current_review == 'clarify' %}current{% endif %}" href="?review=clarify">Needs clarification <span>{{ clarify_count }}</span></a><a class="{% if current_review == 'research' %}current{% endif %}" href="?review=research">Research needed <span>{{ research_needed_count }}</span></a><a class="{% if current_review == 'favorites' %}current{% endif %}" href="?review=favorites">★ Favorites <span>{{ favorites_count }}</span></a><a class="{% if current_review == 'not_suitable' %}current{% endif %}" href="?review=not_suitable">Not suitable</a>
 </nav>
+{% endif %}
 
 {% if selected %}
 <section class="selected-detail selected-detail-first">
@@ -67,6 +73,22 @@
 <section class="opportunity-list-section">
     <div class="list-section-heading"><p class="eyebrow">Your pipeline</p><h2>{% if selected %}Other opportunities{% else %}Opportunities{% endif %}</h2></div>
     <form method="get" class="filters">{% if current_review %}<input type="hidden" name="review" value="{{ current_review }}">{% endif %}<label class="search-box"><span>⌕</span><input type="search" name="q" value="{{ query }}" placeholder="Search company, role, or location"></label><select name="status" aria-label="Filter by status" onchange="this.form.submit()"><option value="">All applications</option>{% for value, label in statuses %}<option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="button secondary" type="submit">Search</button></form>
-    {% if page.object_list %}<section class="applications-table"><div class="table-header"><span>Company and role</span><span>Industry</span><span>Size</span><span>Match</span><span>Status</span><span>Next</span></div>{% for opportunity in page.object_list %}<a class="application-row{% if selected.id == opportunity.id %} selected{% endif %}{% if opportunity.is_fresh %} fresh{% endif %}{% if opportunity.verification_status == 'expired' %} expired{% endif %}" href="?selected={{ opportunity.id }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_review %}&review={{ current_review }}{% endif %}"><span class="company-cell company-with-logo"><span class="list-company-logo">{% if opportunity.organization.logo_url %}<img src="{{ opportunity.organization.logo_url }}" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% elif opportunity.organization.website %}<img src="https://www.google.com/s2/favicons?domain_url={{ opportunity.organization.website|urlencode }}&sz=128" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% else %}{{ opportunity.organization.name|first }}{% endif %}</span><span><strong>{% if opportunity.is_favorite %}<b class="favorite-star">★</b>{% endif %}{{ opportunity.organization.name }}</strong><small>{{ opportunity.title }}{% if opportunity.location %} · {{ opportunity.location }}{% endif %}{% if opportunity.posting_language %} · {{ opportunity.posting_language }}{% endif %}</small></span></span><span class="list-meta"><small>Industry</small><strong>{{ opportunity.company_industry|default:"Research needed" }}</strong></span><span class="list-meta"><small>Size</small><strong>{{ opportunity.company_size|default:"Research needed" }}</strong></span><span class="match-cell match-{{ opportunity.match_tone }}">{% if opportunity.match_score != None %}{{ opportunity.match_score }}%{% else %}—{% endif %}</span><span class="status-stack"><em class="status-pill status-{{ opportunity.status }}">{{ opportunity.get_status_display }}</em><small class="verification-{{ opportunity.verification_status }}">{{ opportunity.get_verification_status_display }}</small></span><small class="row-next-action">{{ opportunity.next_action|default:"No action"|truncatewords:7 }}</small></a>{% endfor %}</section>{% if page.paginator.num_pages > 1 %}<nav class="pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">← Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">Next →</a>{% endif %}</nav>{% endif %}{% else %}<section class="empty-state"><div class="empty-icon">◎</div><h2>No opportunities here</h2><p>Ask Robert to search, or choose another pipeline tab.</p></section>{% endif %}
+    {% if page.object_list %}
+    <section class="applications-table">
+        <div class="table-header"><span>Company and role</span><span>Industry</span><span>Size</span><span>Match</span><span>Status</span><span>Next</span></div>
+        {% for opportunity in page.object_list %}
+        <a class="application-row{% if selected.id == opportunity.id %} selected{% endif %}{% if opportunity.is_fresh %} fresh{% endif %}{% if opportunity.verification_status == 'expired' %} expired{% endif %}" href="?selected={{ opportunity.id }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_review %}&review={{ current_review }}{% endif %}">
+            {% if opportunity.verification_status == 'expired' or opportunity.japanese_only_inferred %}<span class="row-flags">{% if opportunity.verification_status == 'expired' %}<b class="edge-flag expired">Expired</b>{% endif %}{% if opportunity.japanese_only_inferred %}<b class="edge-flag japanese-only">日本語 only</b>{% endif %}</span>{% endif %}
+            <span class="company-cell company-with-logo"><span class="list-company-logo">{% if opportunity.organization.logo_url %}<img src="{{ opportunity.organization.logo_url }}" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% elif opportunity.organization.website %}<img src="https://www.google.com/s2/favicons?domain_url={{ opportunity.organization.website|urlencode }}&sz=128" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% else %}{{ opportunity.organization.name|first }}{% endif %}</span><span><strong>{% if opportunity.is_favorite %}<b class="favorite-star">★</b>{% endif %}{{ opportunity.organization.name }}</strong><small>{{ opportunity.title }}{% if opportunity.location %} · {{ opportunity.location }}{% endif %}</small></span></span>
+            <span class="list-meta"><small>Industry</small><strong>{{ opportunity.company_industry|default:"Research needed" }}</strong></span>
+            <span class="list-meta"><small>Size</small><strong>{{ opportunity.company_size|default:"Research needed" }}</strong></span>
+            <span class="match-cell match-{{ opportunity.match_tone }}">{% if opportunity.match_score != None %}{{ opportunity.match_score }}%{% else %}—{% endif %}</span>
+            <span class="status-stack"><em class="status-pill status-{{ opportunity.status }}">{{ opportunity.get_status_display }}</em>{% if opportunity.verification_status != 'expired' %}<small class="verification-{{ opportunity.verification_status }}">{{ opportunity.get_verification_status_display }}</small>{% endif %}</span>
+            <small class="row-next-action">{{ opportunity.next_action|default:"No action"|truncatewords:7 }}</small>
+        </a>
+        {% endfor %}
+    </section>
+    {% if page.paginator.num_pages > 1 %}<nav class="pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">← Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">Next →</a>{% endif %}</nav>{% endif %}
+    {% else %}<section class="empty-state"><div class="empty-icon">◎</div><h2>No opportunities here</h2><p>Ask Robert to search, or choose another pipeline tab.</p></section>{% endif %}
 </section>
 {% endblock %}

@@ -480,6 +480,7 @@ def qualify_discoveries(request):
             opportunity.japanese_requirement = report.japanese_requirement.strip()
             opportunity.posting_language = report.posting_language
             opportunity.posting_language_note = report.posting_language_note.strip()
+            opportunity.japanese_only_inferred = report.japanese_only_inferred
             opportunity.visa_support = report.visa_support.strip()
             opportunity.thesis_compatibility = report.thesis_compatibility.strip()
             opportunity.job_description = report.role_summary.strip() or opportunity.job_description
@@ -501,7 +502,7 @@ def qualify_discoveries(request):
                 "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
                 "location", "internship_dates", "internship_start_date", "internship_end_date",
                 "minimum_duration", "work_arrangement", "japanese_requirement",
-                "posting_language", "posting_language_note",
+                "posting_language", "posting_language_note", "japanese_only_inferred",
                 "application_deadline_text", "deadline", "responsibilities",
                 "what_you_would_do", "what_company_needs", "candidate_fee_required",
                 "candidate_fee", "compensation",

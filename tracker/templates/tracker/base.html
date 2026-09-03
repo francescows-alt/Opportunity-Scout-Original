@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Opportunity Scout{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}?v=20260903b">
+    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}?v=20260903c">
 </head>
 <body>
     <div class="app-frame">
@@ -27,7 +27,7 @@
             {% block content %}{% endblock %}
         </main>
     </div>
-    <button class="robert-launcher" type="button" aria-controls="robert-panel" aria-expanded="false">
+    {% if not selected %}<button class="robert-launcher" type="button" aria-controls="robert-panel" aria-expanded="false">
         <span class="robert-face">R</span><span>Ask Robert</span>
     </button>
     <aside id="robert-panel" class="robert-panel{% if request.GET.robert == 'open' %} open{% endif %}" aria-label="Chat with Robert">
@@ -44,9 +44,9 @@
             <textarea name="message" rows="3" data-dictation="true" placeholder="Discuss anything with Robert…" required></textarea>
             <div><small>Nothing is sent to employers.</small><button class="button primary" type="submit">Send</button></div>
         </form>
-    </aside>
+    </aside>{% endif %}
     <div id="dictation-config" data-transcription-url="{% url 'transcribe-audio' %}"></div>
-    <script src="{% static 'tracker/dictation.js' %}?v=20260903b" defer></script>
-    <script src="{% static 'tracker/app.js' %}?v=20260903b" defer></script>
+    <script src="{% static 'tracker/dictation.js' %}?v=20260903c" defer></script>
+    <script src="{% static 'tracker/app.js' %}?v=20260903c" defer></script>
 </body>
 </html>

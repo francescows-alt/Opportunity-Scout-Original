@@ -252,6 +252,7 @@ class DashboardTests(TestCase):
                 "japanese_requirement": "Intermediate Japanese preferred",
                 "posting_language": "English",
                 "posting_language_note": "The full vacancy is written in English; this does not prove Japanese is unnecessary.",
+                "japanese_only_inferred": False,
                 "visa_support": "Not stated in the source",
                 "thesis_compatibility": "Requires confirmation",
                 "role_summary": "Supports growth research and campaigns.", "match_score": 84,
@@ -308,6 +309,9 @@ class DashboardTests(TestCase):
         self.assertContains(report, "What you would actually do")
         self.assertContains(report, "What the company needs")
         self.assertNotContains(report, "Robert’s verdict")
+        self.assertNotContains(report, "Autonomous discovery")
+        self.assertNotContains(report, "Ask Robert")
+        self.assertNotContains(report, "Application totals")
         page_html = report.content.decode()
         self.assertLess(page_html.index("back-to-list"), page_html.index("Other opportunities"))
 
@@ -319,6 +323,8 @@ class DashboardTests(TestCase):
             campaign=self.campaign, organization=organization, title="Strategy Intern",
             company_industry="Fintech", company_size="51–200 employees",
             posting_language="Japanese",
+            japanese_requirement="Japanese-only (inferred)",
+            japanese_only_inferred=True,
             verification_status=Opportunity.VerificationStatus.EXPIRED,
         )
         response = self.client.get(reverse("dashboard"))
@@ -326,7 +332,7 @@ class DashboardTests(TestCase):
         self.assertContains(response, "51–200 employees")
         self.assertContains(response, "https://example.com/logo.png")
         self.assertContains(response, "Expired")
-        self.assertContains(response, "verification-expired")
+        self.assertContains(response, "日本語 only")
 
     def test_serious_list_only_shows_qualified_research(self):
         organization = Organization.objects.create(name="Serious Company")
