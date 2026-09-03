@@ -106,7 +106,10 @@ class CandidateProfileTests(TestCase):
             "long_description": "A long and truthful description of my background.",
         })
         self.assertRedirects(response, reverse("profile"))
-        self.assertEqual(CandidateProfile.objects.get(pk=1).full_name, "Francesco")
+        self.assertEqual(
+            CandidateProfile.objects.get(pk=1).long_description,
+            "A long and truthful description of my background.",
+        )
 
     def test_user_can_upload_profile_document(self):
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
@@ -129,6 +132,7 @@ class CandidateProfileTests(TestCase):
         self.assertRedirects(response, reverse("profile"))
         profile = CandidateProfile.objects.get(pk=1)
         self.assertIn("International Business", profile.profile_draft)
+        self.assertIn("International Business", profile.long_description)
         self.assertEqual(ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE).count(), 3)
 
     def test_profile_starts_with_robert_question(self):
@@ -139,15 +143,28 @@ class CandidateProfileTests(TestCase):
     @patch("tracker.views.analyze_profile_documents")
     def test_document_analysis_requires_review_before_updating_profile(self, analyze):
         analyze.return_value = DocumentProfileAnalysis(
-            professional_identity="## Verified proposed profile",
-            education_and_requirements="Business degree",
-            relevant_experience_and_results="Relevant project",
-            skills_and_languages="English",
-            career_direction="International business work",
-            practical_constraints="Graduation internship",
+            profile={
+                "name": "Francesco",
+                "headline": "International Business student",
+                "summary": "Verified proposed profile",
+                "experience": [{
+                    "employer": "Example Company", "role": "Business Intern",
+                    "date_range": "2025", "location": "Rotterdam",
+                    "highlights": ["Completed a relevant project"],
+                }],
+                "education": [{
+                    "institution": "Rotterdam Business School", "qualification": "International Business",
+                    "date_range": "2023–2027", "location": "Rotterdam",
+                    "highlights": ["Asia track"],
+                }],
+                "skill_groups": [{"category": "Business", "skills": ["Research"]}],
+                "languages": [{"language": "English", "level": "Working proficiency"}],
+                "looking_for": ["Meaningful international business work"],
+                "not_looking_for": ["Purely administrative work"],
+                "practical_constraints": ["Graduation internship"],
+            },
             evidence=[EvidenceItem(claim="Studies business", source="cv.pdf", evidence="Business student")],
-            uncertainties=["Graduation date is unclear"],
-            follow_up_questions=["When do you graduate?"],
+            important_question="When do you graduate?",
             summary="I extracted the supported facts.",
         )
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
@@ -163,19 +180,19 @@ class CandidateProfileTests(TestCase):
             profile = CandidateProfile.objects.get(pk=1)
             self.assertEqual(profile.document_analysis_status, CandidateProfile.AnalysisStatus.READY)
             self.assertEqual(profile.profile_draft, "My original long essay")
-            self.assertIn("Professional identity\nVerified proposed profile", profile.document_profile_proposal)
-            self.assertNotIn("##", profile.document_profile_proposal)
+            self.assertIn("Example Company — Business Intern", profile.document_profile_proposal)
+            self.assertEqual(profile.document_structured_proposal["name"], "Francesco")
             review = self.client.get(reverse("profile"))
-            self.assertContains(review, "Review your professional profile")
-            self.assertContains(review, "Preview")
+            self.assertContains(review, "What Francesco is looking for")
+            self.assertContains(review, "Everything Robert should know")
 
             response = self.client.post(reverse("profile"), {
                 "action": "accept_document_profile",
-                "document_profile_proposal": "Verified proposed profile with my correction",
             })
             self.assertRedirects(response, reverse("profile"))
             profile.refresh_from_db()
-            self.assertEqual(profile.profile_draft, "Verified proposed profile with my correction")
+            self.assertIn("Verified proposed profile", profile.profile_draft)
+            self.assertEqual(profile.structured_profile["headline"], "International Business student")
             self.assertEqual(profile.long_description, "My original long essay")
 
 

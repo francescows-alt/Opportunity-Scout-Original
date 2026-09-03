@@ -51,6 +51,23 @@ class CandidateProfileForm(forms.ModelForm):
             "long_description": forms.Textarea(attrs={"rows": 8, "data-dictation": "true"}),
             "profile_draft": forms.Textarea(attrs={"rows": 16, "data-dictation": "true"}),
         }
+
+
+class ProfileSourceNotesForm(forms.ModelForm):
+    class Meta:
+        model = CandidateProfile
+        fields = ["long_description"]
+        widgets = {
+            "long_description": forms.Textarea(attrs={
+                "rows": 12,
+                "data-dictation": "true",
+                "placeholder": "Paste your long self-description, ambitions, preferences, projects, context, or anything Robert should understand…",
+            }),
+        }
+        labels = {"long_description": "Your self-description and background notes"}
+        help_texts = {
+            "long_description": "This can be long, rough and personal. Robert uses it as source material; it is not shown to employers.",
+        }
         labels = {
             "long_description": "Original notes and anything else Robert should remember",
             "profile_draft": "Live editable profile",

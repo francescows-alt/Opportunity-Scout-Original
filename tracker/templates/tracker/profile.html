@@ -3,112 +3,122 @@
 {% block title %}My profile · Internship OS{% endblock %}
 {% block content %}
 <section class="profile-heading">
-    <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">Answer naturally. The interview builds a live draft you can correct at any time.</p></div>
+    <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">A professional working profile and CV built from your evidence, preferences, and conversations with Robert.</p></div>
     <span class="waiting-badge">{% if ai_configured %}Robert connected{% else %}AI setup needed{% endif %}</span>
 </section>
 
-<div class="profile-workspace">
-    <section class="chat-panel">
-        <div class="panel-heading"><div><span class="ai-avatar">R</span><div><h2>Profile interview with Robert</h2><p>He asks follow-ups and updates the editable profile</p></div></div></div>
-        <div class="chat-messages">
-            {% for message in conversation %}
-                <div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}R{% else %}You{% endif %}</span><p>{{ message.content|linebreaksbr }}</p></div>
-            {% endfor %}
-        </div>
-        <form method="post" class="chat-composer">
-            {% csrf_token %}<input type="hidden" name="action" value="interview_answer">
-            <textarea name="answer" rows="5" data-dictation="true" placeholder="Type or dictate your answer…" required></textarea>
-            <div class="chat-actions"><small>Use the microphone to dictate. You still choose when to send.</small><button class="button primary" type="submit">Send answer</button></div>
-        </form>
-    </section>
+{% if display_profile %}
+<section class="professional-profile{% if profile_is_proposal %} proposal{% endif %}">
+    <header class="cv-header">
+        <div class="cv-monogram">{{ display_profile.name|first|default:"F" }}</div>
+        <div class="cv-identity"><p class="eyebrow">{% if profile_is_proposal %}Robert’s proposed profile{% else %}Professional profile{% endif %}</p><h2>{{ display_profile.name|default:"Francesco" }}</h2><p class="cv-headline">{{ display_profile.headline }}</p></div>
+        {% if profile_is_proposal %}<span class="review-required">Review required</span>{% else %}<span class="profile-current">Current profile</span>{% endif %}
+    </header>
 
-    <form method="post" class="form-section live-profile-panel">
-        {% csrf_token %}<input type="hidden" name="action" value="save_profile">
-        <div class="section-intro"><span class="step-number">✓</span><div><h2>Live profile</h2><p>Robert maintains this from your answers. You remain in control and can correct every word.</p></div></div>
-        <div class="field-grid">
-            {% include "tracker/field.html" with field=profile_form.full_name %}
-            {% include "tracker/field.html" with field=profile_form.headline %}
-            {% include "tracker/field.html" with field=profile_form.profile_draft %}
+    <div class="cv-summary">{{ display_profile.summary }}</div>
+
+    <div class="cv-layout">
+        <main class="cv-main">
+            {% if display_profile.experience %}
+            <section class="cv-section">
+                <div class="cv-section-title"><span>01</span><h3>Experience</h3></div>
+                <div class="timeline">
+                    {% for item in display_profile.experience %}
+                    <article class="timeline-entry">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-heading"><div><strong>{{ item.employer }}</strong><p>{{ item.role }}</p>{% if item.location %}<small>{{ item.location }}</small>{% endif %}</div><time>{{ item.date_range }}</time></div>
+                        {% if item.highlights %}<ul>{% for point in item.highlights %}<li>{{ point }}</li>{% endfor %}</ul>{% endif %}
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if display_profile.education %}
+            <section class="cv-section">
+                <div class="cv-section-title"><span>02</span><h3>Education</h3></div>
+                <div class="timeline education-timeline">
+                    {% for item in display_profile.education %}
+                    <article class="timeline-entry">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-heading"><div><strong>{{ item.institution }}</strong><p>{{ item.qualification }}</p>{% if item.location %}<small>{{ item.location }}</small>{% endif %}</div><time>{{ item.date_range }}</time></div>
+                        {% if item.highlights %}<ul>{% for point in item.highlights %}<li>{{ point }}</li>{% endfor %}</ul>{% endif %}
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+        </main>
+
+        <aside class="cv-sidebar">
+            <section class="direction-card positive"><div class="direction-icon">↗</div><h3>What Francesco is looking for</h3><ul>{% for point in display_profile.looking_for %}<li>{{ point }}</li>{% empty %}<li>Still being defined with Robert.</li>{% endfor %}</ul></section>
+            <section class="direction-card negative"><div class="direction-icon">—</div><h3>What he is not looking for</h3><ul>{% for point in display_profile.not_looking_for %}<li>{{ point }}</li>{% empty %}<li>No firm exclusions recorded.</li>{% endfor %}</ul></section>
+
+            {% if display_profile.skill_groups %}<section class="cv-side-section"><h3>Skills</h3>{% for group in display_profile.skill_groups %}<div class="skill-group"><strong>{{ group.category }}</strong><div>{% for skill in group.skills %}<span>{{ skill }}</span>{% endfor %}</div></div>{% endfor %}</section>{% endif %}
+            {% if display_profile.languages %}<section class="cv-side-section"><h3>Languages</h3>{% for item in display_profile.languages %}<div class="language-row"><strong>{{ item.language }}</strong><span>{{ item.level }}</span></div>{% endfor %}</section>{% endif %}
+            {% if display_profile.practical_constraints %}<section class="cv-side-section constraints"><h3>Practical requirements</h3><ul>{% for point in display_profile.practical_constraints %}<li>{{ point }}</li>{% endfor %}</ul></section>{% endif %}
+        </aside>
+    </div>
+
+    {% if profile_is_proposal %}
+    <footer class="cv-review-footer">
+        <div><strong>Check the facts and emphasis</strong><p>If something is wrong, tell Robert below. Nothing becomes your active profile until you approve it.</p></div>
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="accept_document_profile"><button class="button primary" type="submit">Accept this profile</button></form>
+    </footer>
+    {% endif %}
+
+    {% if profile_is_proposal and candidate.document_evidence %}
+    <details class="evidence-drawer"><summary>View {{ candidate.document_evidence|length }} supporting evidence points</summary><div>{% for item in candidate.document_evidence %}<article><strong>{{ item.claim }}</strong><p>“{{ item.evidence }}”</p><small>{{ item.source }}</small></article>{% endfor %}</div></details>
+    {% endif %}
+</section>
+{% else %}
+<section class="profile-empty"><span>◎</span><div><h2>Your professional profile will appear here</h2><p>Add source material below, then ask Robert to analyze it.</p></div></section>
+{% endif %}
+
+<section class="documents-wide source-material">
+    <div class="source-heading"><div><span class="step-number">＋</span><div><p class="eyebrow">Inputs, not presentation</p><h2>Everything Robert should know</h2><p>Drop formal evidence on the left and paste your unpolished personal context on the right. This material can be long and messy—it stays behind the clean professional profile.</p></div></div></div>
+    <div class="source-grid">
+        <div class="source-files">
+            <form method="post" enctype="multipart/form-data" class="upload-form">
+                {% csrf_token %}<input type="hidden" name="action" value="upload_document">
+                {% include "tracker/field.html" with field=document_form.label %}
+                <label class="drop-zone"><span class="drop-icon">⇧</span><strong>Drop CVs and evidence here</strong><small>CVs, transcripts, certificates, university rules, screenshots</small>{{ document_form.files }}</label>
+                {% for error in document_form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+                <button class="button secondary" type="submit">Upload files</button>
+                <p class="privacy-note">PDF, Word, text, PNG, JPG or WEBP · 10 MB each · stored locally</p>
+            </form>
+            <div class="document-list compact-documents">
+                {% for document in candidate.documents.all %}<a href="{{ document.file.url }}" target="_blank"><strong>{{ document.label }}</strong><small>{{ document.uploaded_at|date:"j M Y" }}</small></a>{% empty %}<div class="document-empty">No documents uploaded yet.</div>{% endfor %}
+            </div>
+        </div>
+
+        <form method="post" class="source-notes-form">
+            {% csrf_token %}<input type="hidden" name="action" value="save_profile">
+            <div class="source-note-intro"><strong>Your own description</strong><p>Paste who you are, what motivates you, preferences, projects, context, or anything a CV misses. It does not need professional wording.</p></div>
             {% include "tracker/field.html" with field=profile_form.long_description %}
-        </div>
-        <div class="form-actions"><button class="button primary" type="submit">Save my edits</button></div>
-    </form>
-</div>
-
-<section class="documents-wide">
-    <div class="section-intro"><span class="step-number">＋</span><div><h2>Profile documents</h2><p>Upload CVs, transcripts, certificates, images, and university files. They stay on this Mac.</p></div></div>
-    <div class="documents-grid">
-        <form method="post" enctype="multipart/form-data" class="upload-form">
-            {% csrf_token %}<input type="hidden" name="action" value="upload_document">
-            {% include "tracker/field.html" with field=document_form.label %}
-            <label class="drop-zone"><span class="drop-icon">⇧</span><strong>Choose or drop files</strong><small>Select several files at once</small>{{ document_form.files }}</label>
-            {% for error in document_form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
-            <button class="button primary" type="submit">Add to my profile</button>
-            <p class="privacy-note">PDF, Word, text, PNG, JPG, or WEBP · 10 MB each · local only</p>
+            <button class="button secondary" type="submit">Save source notes</button>
         </form>
-        <div class="document-list">
-            {% for document in candidate.documents.all %}
-                <a href="{{ document.file.url }}" target="_blank"><strong>{{ document.label }}</strong><small>{{ document.file.name|cut:"profile_documents/" }} · {{ document.uploaded_at|date:"j M Y" }}</small></a>
-            {% empty %}<div class="document-empty">No documents uploaded yet.</div>{% endfor %}
-        </div>
     </div>
     {% if candidate.documents.exists %}
     <form method="post" class="document-analysis-action">
         {% csrf_token %}<input type="hidden" name="action" value="analyze_documents">
-        <div><strong>Let Robert read these documents</strong><p>He will temporarily send them to OpenAI, extract supported facts, delete the temporary remote copies, and show you a proposal. Nothing is accepted automatically.</p></div>
-        <button class="button primary" type="submit">Analyze my documents</button>
+        <div><strong>{% if display_profile %}Rebuild the professional profile{% else %}Build the professional profile{% endif %}</strong><p>First save any source-note changes above. Robert will combine the documents and your description, then show a new proposal for approval.</p></div>
+        <button class="button primary" type="submit">{% if display_profile %}Rebuild with Robert{% else %}Analyze with Robert{% endif %}</button>
     </form>
     {% endif %}
 </section>
 
-{% if candidate.document_analysis_status == 'ready' %}
-<section class="documents-wide analysis-review">
-    <div class="review-heading">
-        <div><span class="ai-avatar">R</span><div><p class="eyebrow">Robert’s synthesis</p><h2>Review your professional profile</h2><p>Important information, organized for matching and applications—not a copy of your CV.</p></div></div>
-        <span class="review-required">Review required</span>
+<section class="chat-panel profile-chat-wide">
+    <div class="panel-heading"><div><span class="ai-avatar">R</span><div><h2>Clarify the important parts with Robert</h2><p>Robert asks only questions that materially improve matching or applications</p></div></div></div>
+    <div class="chat-messages">
+        {% for message in conversation %}<div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}R{% else %}You{% endif %}</span><p>{{ message.content|linebreaksbr }}</p></div>{% endfor %}
     </div>
-    <div class="analysis-columns">
-        <form method="post" class="proposal-form" id="proposal-form">
-            {% csrf_token %}<input type="hidden" name="action" value="accept_document_profile">
-            <div class="profile-paper">
-                <div class="profile-paper-toolbar">
-                    <div><span>Profile draft</span><small>Not active until you accept it</small></div>
-                    <div class="view-switch" aria-label="Profile view">
-                        <button type="button" class="active" data-profile-view="preview">Preview</button>
-                        <button type="button" data-profile-view="edit">Edit text</button>
-                    </div>
-                </div>
-                <div id="profile-proposal-preview" class="profile-proposal-preview"></div>
-                <div class="proposal-editor" hidden>
-                    <label for="document-profile-proposal">Edit Robert’s draft</label>
-                    <textarea id="document-profile-proposal" name="document_profile_proposal" rows="26" data-dictation="true">{{ candidate.document_profile_proposal }}</textarea>
-                    <small>Your changes update the preview. Nothing is sent to employers.</small>
-                </div>
-            </div>
-            <div class="proposal-actions">
-                <button class="button secondary" type="button" data-profile-view="edit">Edit before accepting</button>
-                <button class="button primary" type="submit">Accept as my profile</button>
-            </div>
-        </form>
-        <aside class="review-sidebar">
-            <section class="review-card evidence-panel">
-                <div class="review-card-heading"><div><span class="card-icon verified">✓</span><div><h3>Supporting evidence</h3><p>{{ candidate.document_evidence|length }} claims traced to a source</p></div></div></div>
-                <div class="evidence-list">
-                {% for item in candidate.document_evidence %}
-                <article><strong>{{ item.claim }}</strong><p>“{{ item.evidence }}”</p><small>{{ item.source }}</small></article>
-                {% empty %}<p>No evidence was returned. Do not accept the proposal until this is resolved.</p>{% endfor %}
-                </div>
-            </section>
-            {% if candidate.document_questions %}
-            <section class="review-card question-panel">
-                <div class="review-card-heading"><div><span class="card-icon question">?</span><div><h3>Still to clarify</h3><p>{{ candidate.document_questions|length }} points Robert should ask about</p></div></div></div>
-                <ol>{% for question in candidate.document_questions %}<li>{{ question }}</li>{% endfor %}</ol>
-            </section>
-            {% endif %}
-        </aside>
-    </div>
+    <form method="post" class="chat-composer">
+        {% csrf_token %}<input type="hidden" name="action" value="interview_answer">
+        <textarea name="answer" rows="5" data-dictation="true" placeholder="Answer Robert, correct the profile, or add something important…" required></textarea>
+        <div class="chat-actions"><small>Speak or type. Nothing is sent to employers.</small><button class="button primary" type="submit">Send to Robert</button></div>
+    </form>
 </section>
-{% elif candidate.document_analysis_status == 'error' %}
-<div class="message analysis-error">{{ candidate.document_analysis_error }}</div>
-{% endif %}
+
+{% if candidate.document_analysis_status == 'error' %}<div class="message analysis-error">{{ candidate.document_analysis_error }}</div>{% endif %}
 {% endblock %}

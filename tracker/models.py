@@ -88,6 +88,8 @@ class CandidateProfile(models.Model):
         default=AnalysisStatus.NOT_STARTED,
     )
     document_profile_proposal = models.TextField(blank=True)
+    document_structured_proposal = models.JSONField(default=dict, blank=True)
+    structured_profile = models.JSONField(default=dict, blank=True)
     document_evidence = models.JSONField(default=list, blank=True)
     document_questions = models.JSONField(default=list, blank=True)
     document_analysis_error = models.TextField(blank=True)

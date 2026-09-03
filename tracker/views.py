@@ -12,10 +12,10 @@ from django.views.decorators.http import require_POST
 from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, robert_reply, transcribe
 
 from .forms import (
-    CandidateProfileForm,
     CampaignPromptForm,
     OpportunityForm,
     ProfileDocumentUploadForm,
+    ProfileSourceNotesForm,
     QuickInboxForm,
     SearchCampaignForm,
 )
@@ -196,11 +196,11 @@ def opportunity_edit(request, opportunity_id):
 
 def profile(request):
     candidate, _ = CandidateProfile.objects.get_or_create(pk=1)
-    profile_form = CandidateProfileForm(instance=candidate)
+    profile_form = ProfileSourceNotesForm(instance=candidate)
     document_form = ProfileDocumentUploadForm()
 
     if request.method == "POST" and request.POST.get("action") == "save_profile":
-        profile_form = CandidateProfileForm(request.POST, instance=candidate)
+        profile_form = ProfileSourceNotesForm(request.POST, instance=candidate)
         if profile_form.is_valid():
             profile_form.save()
             messages.success(request, "Your profile description was saved.")
@@ -229,19 +229,24 @@ def profile(request):
                 "\n\n".join(filter(None, [candidate.profile_draft, candidate.long_description])),
             )
             candidate.document_profile_proposal = result.to_profile_text()
+            candidate.document_structured_proposal = result.profile.model_dump()
             candidate.document_evidence = [item.model_dump() for item in result.evidence]
-            candidate.document_questions = result.uncertainties + result.follow_up_questions
+            candidate.document_questions = [result.important_question] if result.important_question else []
             candidate.document_analysis_status = CandidateProfile.AnalysisStatus.READY
             candidate.document_analysis_error = ""
             candidate.document_analyzed_at = timezone.now()
             candidate.save(update_fields=[
-                "document_profile_proposal", "document_evidence", "document_questions",
+                "document_profile_proposal", "document_structured_proposal", "document_evidence", "document_questions",
                 "document_analysis_status", "document_analysis_error", "document_analyzed_at", "updated_at",
             ])
             ChatMessage.objects.create(
                 scope=ChatMessage.Scope.PROFILE,
                 role=ChatMessage.Role.ASSISTANT,
-                content=result.summary + " Review my proposed profile and evidence below. Nothing has been accepted automatically.",
+                content=(
+                    result.summary
+                    + " Review my proposed profile below. Nothing has been accepted automatically."
+                    + (f" One important question: {result.important_question}" if result.important_question else "")
+                ),
             )
             messages.success(request, "Robert finished reading the documents. Review the proposal before accepting it.")
         except AIUnavailable as error:
@@ -254,14 +259,20 @@ def profile(request):
         return redirect("profile")
 
     if request.method == "POST" and request.POST.get("action") == "accept_document_profile":
-        proposal = request.POST.get("document_profile_proposal", "").strip()
+        proposal = candidate.document_profile_proposal.strip()
         if proposal:
-            update_fields = ["document_profile_proposal", "profile_draft", "updated_at"]
+            update_fields = [
+                "document_profile_proposal", "profile_draft", "structured_profile",
+                "full_name", "headline", "updated_at",
+            ]
             if candidate.profile_draft.strip() and not candidate.long_description.strip():
                 candidate.long_description = candidate.profile_draft.strip()
                 update_fields.append("long_description")
             candidate.document_profile_proposal = proposal
             candidate.profile_draft = proposal
+            candidate.structured_profile = candidate.document_structured_proposal
+            candidate.full_name = candidate.structured_profile.get("name", candidate.full_name)
+            candidate.headline = candidate.structured_profile.get("headline", candidate.headline)
             candidate.save(update_fields=update_fields)
             messages.success(request, "The reviewed document profile is now your editable source of truth.")
         else:
@@ -284,7 +295,10 @@ def profile(request):
                 assistant_text = "I saved your answer, but the AI response was interrupted. Please try another message."
                 prefix = f"{candidate.profile_draft.rstrip()}\n\n" if candidate.profile_draft.strip() else ""
                 candidate.profile_draft = f"{prefix}Interview note\n{answer}"
-            candidate.save(update_fields=["profile_draft", "updated_at"])
+            if answer not in candidate.long_description:
+                note_prefix = f"{candidate.long_description.rstrip()}\n\n" if candidate.long_description.strip() else ""
+                candidate.long_description = f"{note_prefix}Robert interview answer\n{answer}"
+            candidate.save(update_fields=["profile_draft", "long_description", "updated_at"])
             ChatMessage.objects.create(scope=ChatMessage.Scope.PROFILE, role=ChatMessage.Role.USER, content=answer)
             ChatMessage.objects.create(scope=ChatMessage.Scope.PROFILE, role=ChatMessage.Role.ASSISTANT, content=assistant_text)
             messages.success(request, "Your answer was saved and the live profile was updated.")
@@ -299,12 +313,22 @@ def profile(request):
         )
     conversation = ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE)
 
+    display_profile = (
+        candidate.document_structured_proposal
+        if candidate.document_analysis_status == CandidateProfile.AnalysisStatus.READY and candidate.document_structured_proposal
+        else candidate.structured_profile
+    )
     return render(request, "tracker/profile.html", {
         "candidate": candidate,
         "profile_form": profile_form,
         "document_form": document_form,
         "conversation": conversation,
         "ai_configured": is_configured(),
+        "display_profile": display_profile,
+        "profile_is_proposal": bool(
+            candidate.document_analysis_status == CandidateProfile.AnalysisStatus.READY
+            and candidate.document_structured_proposal
+        ),
     })
 
 
