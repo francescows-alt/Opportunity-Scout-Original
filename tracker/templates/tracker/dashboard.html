@@ -20,7 +20,7 @@
         </form>
         {% if research_needed_count %}
         <form method="post" action="{% url 'qualify-discoveries' %}" data-discovery-form>
-            {% csrf_token %}<button class="button research-button" type="submit" {% if not ai_configured %}disabled{% endif %}>Research {{ research_needed_count }} new find{{ research_needed_count|pluralize }}</button>
+            {% csrf_token %}<button class="button research-button" type="submit" {% if not ai_configured %}disabled{% endif %}>{% if research_needed_count > research_batch_count %}Research next {{ research_batch_count }} of {{ research_needed_count }}{% else %}Research {{ research_needed_count }} new find{{ research_needed_count|pluralize }}{% endif %}</button>
             <small class="discovery-progress" hidden>Robert is opening sources and comparing qualifications…</small>
         </form>
         {% endif %}

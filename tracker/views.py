@@ -64,6 +64,9 @@ def dashboard(request):
         selected = page.object_list[0]
 
     all_opportunities = Opportunity.objects.all()
+    research_needed_count = all_opportunities.filter(
+        verification_status=Opportunity.VerificationStatus.PENDING,
+    ).count()
     context = {
         "page": page,
         "selected": selected,
@@ -79,9 +82,8 @@ def dashboard(request):
         ).count(),
         "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
         "ai_configured": is_configured(),
-        "research_needed_count": all_opportunities.filter(
-            verification_status=Opportunity.VerificationStatus.PENDING,
-        ).count(),
+        "research_needed_count": research_needed_count,
+        "research_batch_count": min(research_needed_count, 8),
         "serious_count": all_opportunities.filter(
             verification_status=Opportunity.VerificationStatus.QUALIFIED,
         ).count(),
