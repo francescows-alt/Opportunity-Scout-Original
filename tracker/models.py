@@ -62,6 +62,26 @@ class SearchCampaign(models.Model):
         return self.name
 
 
+class SearchCycle(models.Model):
+    """A permanent memory of how one autonomous search was performed."""
+
+    campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="search_cycles")
+    sequence = models.PositiveIntegerField()
+    strategy = models.CharField(max_length=240)
+    queries = models.JSONField(default=list, blank=True)
+    sources = models.JSONField(default=list, blank=True)
+    found_count = models.PositiveSmallIntegerField(default=0)
+    added_count = models.PositiveSmallIntegerField(default=0)
+    duplicate_count = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-sequence"]
+        constraints = [
+            models.UniqueConstraint(fields=["campaign", "sequence"], name="unique_campaign_search_cycle"),
+        ]
+
+
 class CandidateProfile(models.Model):
     class AnalysisStatus(models.TextChoices):
         NOT_STARTED = "not_started", "Not analyzed"
@@ -149,6 +169,7 @@ class ProfileDocument(models.Model):
 class Organization(models.Model):
     name = models.CharField(max_length=200, db_index=True)
     website = models.URLField(blank=True)
+    logo_url = models.URLField(max_length=500, blank=True)
     location = models.CharField(max_length=200, blank=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -193,6 +214,9 @@ class Opportunity(models.Model):
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.DISCOVERED, db_index=True)
     match_score = models.PositiveSmallIntegerField(blank=True, null=True)
     next_action = models.CharField(max_length=240, blank=True)
+    is_favorite = models.BooleanField(default=False, db_index=True)
+    canonical_url = models.URLField(max_length=500, blank=True, db_index=True)
+    fingerprint = models.CharField(max_length=64, blank=True, db_index=True)
     deadline = models.DateField(blank=True, null=True)
     submitted_on = models.DateField(blank=True, null=True)
     fit_summary = models.TextField(blank=True)
@@ -215,6 +239,11 @@ class Opportunity(models.Model):
     internship_dates = models.CharField(max_length=200, blank=True)
     application_deadline_text = models.CharField(max_length=200, blank=True)
     responsibilities = models.JSONField(default=list, blank=True)
+    what_you_would_do = models.TextField(blank=True)
+    what_company_needs = models.TextField(blank=True)
+    candidate_fee_required = models.BooleanField(default=False)
+    candidate_fee = models.CharField(max_length=200, blank=True)
+    compensation = models.CharField(max_length=200, blank=True)
     work_arrangement = models.CharField(max_length=160, blank=True)
     japanese_requirement = models.CharField(max_length=240, blank=True)
     visa_support = models.CharField(max_length=240, blank=True)
@@ -229,6 +258,18 @@ class Opportunity(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campaign", "canonical_url"],
+                condition=~models.Q(canonical_url=""),
+                name="unique_campaign_canonical_url",
+            ),
+            models.UniqueConstraint(
+                fields=["campaign", "fingerprint"],
+                condition=~models.Q(fingerprint=""),
+                name="unique_campaign_opportunity_fingerprint",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.organization.name} — {self.title}"

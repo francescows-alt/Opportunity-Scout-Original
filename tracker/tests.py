@@ -7,7 +7,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 
 from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch, OpportunityResearchBatch
-from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle
 
 
 @override_settings(OPENAI_API_KEY="")
@@ -102,6 +102,9 @@ class DashboardTests(TestCase):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         research.return_value = InternshipDiscoveryBatch(
             summary="One relevant role found.",
+            search_strategy="Direct employer pages",
+            queries_used=["Tokyo growth internship 2027"],
+            sources_searched=["Employer careers"],
             opportunities=[{
                 "company": "Example Japan", "title": "Growth Intern",
                 "kind": "advertised", "location": "Tokyo, Japan",
@@ -109,6 +112,8 @@ class DashboardTests(TestCase):
                 "description": "A real example vacancy.", "match_score": 82,
                 "fit_summary": "Relevant international growth work.",
                 "missing_information": ["Visa support"],
+                "candidate_fee_required": False, "candidate_fee": "None found",
+                "compensation": "Not stated",
                 "next_action": "Verify visa support and internship dates.",
             }],
         )
@@ -119,6 +124,53 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.match_score, 82)
         self.assertIn("Unknown: Visa support", opportunity.fit_summary)
         self.assertEqual(opportunity.status, Opportunity.Status.DISCOVERED)
+        self.assertEqual(SearchCycle.objects.get().added_count, 1)
+
+    def test_user_can_favorite_an_opportunity(self):
+        organization = Organization.objects.create(name="Favorite Company")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Strategy Intern",
+        )
+        response = self.client.post(reverse("opportunity-favorite", args=[opportunity.id]))
+        self.assertRedirects(response, f"{reverse('dashboard')}?selected={opportunity.id}")
+        opportunity.refresh_from_db()
+        self.assertTrue(opportunity.is_favorite)
+        favorites = self.client.get(reverse("dashboard"), {"review": "favorites"})
+        self.assertContains(favorites, "Favorite Company")
+
+    @patch("tracker.views.research_internships")
+    def test_discovery_blocks_duplicate_roles_and_candidate_fees(self, research):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Existing Co")
+        existing = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            location="Tokyo", source_url="https://existing.example/jobs/123",
+            verification_status=Opportunity.VerificationStatus.QUALIFIED,
+        )
+        common = {
+            "kind": "advertised", "location": "Tokyo", "description": "Role details",
+            "match_score": 70, "fit_summary": "Possible fit", "missing_information": [],
+            "compensation": "Not stated", "next_action": "Review source",
+        }
+        research.return_value = InternshipDiscoveryBatch(
+            summary="Checked duplicate and fee controls.", search_strategy="New keyword method",
+            queries_used=["new query"], sources_searched=["Employer pages"],
+            opportunities=[
+                {**common, "company": "Existing Co", "title": "Growth Intern",
+                 "source_url": "https://other-board.example/growth-intern",
+                 "candidate_fee_required": False, "candidate_fee": "None found"},
+                {**common, "company": "Fee Program", "title": "Tokyo Internship",
+                 "source_url": "https://fees.example/tokyo",
+                 "candidate_fee_required": True, "candidate_fee": "USD 11,450"},
+            ],
+        )
+        self.client.post(reverse("discover-internships"))
+        self.assertEqual(Opportunity.objects.count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.verification_status, Opportunity.VerificationStatus.QUALIFIED)
+        cycle = SearchCycle.objects.get()
+        self.assertEqual(cycle.duplicate_count, 1)
+        self.assertEqual(cycle.added_count, 0)
 
     @patch("tracker.views.qualify_opportunities")
     def test_robert_qualification_builds_practical_report(self, qualify):
@@ -136,6 +188,7 @@ class DashboardTests(TestCase):
                 "company_location": "Tokyo, Japan", "company_size": "Small company",
                 "company_country": "Japan", "company_industry": "B2B software",
                 "company_website": "https://example.com/", "internship_location": "Tokyo, Japan",
+                "company_logo_url": "https://example.com/logo.png",
                 "company_reputation": "Known in its specialist market.",
                 "cv_value": "Provides relevant international growth evidence.",
                 "international_environment": "International customer base.",
@@ -148,6 +201,10 @@ class DashboardTests(TestCase):
                 "thesis_compatibility": "Requires confirmation",
                 "role_summary": "Supports growth research and campaigns.", "match_score": 84,
                 "responsibilities": ["Research customers", "Support campaigns"],
+                "what_you_would_do": "Research customer segments and support campaign execution across the week.",
+                "what_company_needs": "A student with verified marketing experience and sufficient availability.",
+                "candidate_fee_required": False, "candidate_fee": "None found",
+                "compensation": "JPY 80,000 monthly",
                 "fit_summary": "Strong functional fit with practical questions outstanding.",
                 "requirements": [
                     {"requirement": "Marketing experience", "status": "have", "evidence": "Verified Mobal experience."},
@@ -167,6 +224,8 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.company_country, "Japan")
         self.assertEqual(opportunity.company_industry, "B2B software")
         self.assertEqual(opportunity.responsibilities[0], "Research customers")
+        self.assertIn("customer segments", opportunity.what_you_would_do)
+        self.assertEqual(opportunity.compensation, "JPY 80,000 monthly")
         self.assertEqual(opportunity.requirements_assessment[0]["status"], "have")
         self.assertEqual(len(opportunity.requirements_assessment), 2)
         self.assertNotIn("proactive", str(opportunity.requirements_assessment).lower())
@@ -186,6 +245,9 @@ class DashboardTests(TestCase):
         self.assertContains(report, "Check")
         self.assertContains(report, "More about Example Japan")
         self.assertContains(report, "Main responsibilities")
+        self.assertContains(report, "What you would actually do")
+        self.assertContains(report, "What the company needs")
+        self.assertNotContains(report, "Robert’s verdict")
         page_html = report.content.decode()
         self.assertLess(page_html.index("back-to-list"), page_html.index("Other opportunities"))
 

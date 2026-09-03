@@ -138,6 +138,8 @@ dd { margin: 0; }
 .detail-title { display: flex; justify-content: space-between; gap: 2rem; border-bottom: 1px solid var(--line); padding-bottom: 1rem; }
 .detail-title h2 { margin-bottom: 0.25rem; }
 .detail-title p { margin-bottom: 0; color: #687592; }
+.detail-company-heading { display: flex; min-width: 0; align-items: center; gap: 0.8rem; }
+.detail-company-heading > img { width: 3.3rem; height: 3.3rem; border: 1px solid var(--line); border-radius: 0.8rem; background: white; object-fit: contain; padding: 0.35rem; }
 .detail-score { color: #07806c; }
 .detail-verdict { display: flex; align-items: flex-end; flex-direction: column; gap: 0.45rem; }
 .verification-badge { display: inline-flex; border-radius: 999px; background: #f0f1f5; padding: 0.3rem 0.65rem; font-size: 0.72rem; font-weight: 800; }
@@ -145,6 +147,9 @@ dd { margin: 0; }
 .verification-badge.verification-clarify { background: #fff3d9; }
 .verification-badge.verification-unsuitable { background: #fae8e8; }
 .verification-badge.verification-expired { background: #eeeef1; }
+.favorite-button { border: 1px solid #d5d9e4; border-radius: 999px; background: white; padding: 0.3rem 0.65rem; color: #59647b; font: inherit; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
+.favorite-button:hover, .favorite-button.saved { border-color: #e2b64b; background: #fff8e5; color: #986500; }
+.favorite-star { margin-right: 0.28rem; color: #d79d12; }
 .detail-block { border-bottom: 1px solid var(--line); padding: 1.1rem 0; }
 .detail-block h3 { margin: 0 0 0.6rem; font-size: 0.98rem; }
 .detail-block p { margin-bottom: 0; }
@@ -170,6 +175,17 @@ dd { margin: 0; }
 .company-brief p { margin: 0.2rem 0; color: #465169; font-size: 0.82rem; }
 .company-brief small { color: var(--muted); font-size: 0.72rem; }
 .role-summary { max-width: 65rem; margin: -0.15rem 0 0.85rem; color: #465169; font-size: 0.84rem; }
+.fee-warning { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.7rem; border: 1px solid #efb5b5; border-radius: 0.75rem; background: #fff0f0; padding: 0.65rem 0.75rem; color: #8d2525; font-size: 0.72rem; }
+.role-explainer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; border-bottom: 1px solid var(--line); padding: 1.1rem 0; }
+.role-explainer { position: relative; min-height: 10rem; overflow: hidden; border: 1px solid var(--line); border-radius: 1rem; padding: 1rem 1rem 1rem 3.4rem; }
+.role-explainer.work { background: linear-gradient(145deg, #f2f0ff, #fbfbff); }
+.role-explainer.needs { background: linear-gradient(145deg, #ebf8f3, #fbfefd); }
+.role-explainer .explainer-icon { position: absolute; top: 1rem; left: 1rem; display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border-radius: 50%; background: white; color: var(--green); font-weight: 900; box-shadow: 0 3px 10px rgba(32,41,68,0.08); }
+.role-explainer h3 { margin: 0.15rem 0 0.55rem; font-size: 0.95rem; }
+.role-explainer > p:last-child { margin: 0; color: #465169; font-size: 0.77rem; line-height: 1.6; }
+.mini-next { display: flex; align-items: baseline; gap: 0.55rem; border-bottom: 1px solid var(--line); padding: 0.7rem 0; }
+.mini-next span { color: var(--muted); font-size: 0.61rem; font-weight: 850; letter-spacing: 0.06em; text-transform: uppercase; }
+.mini-next strong { font-size: 0.7rem; }
 .decision-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(180px, 0.45fr); gap: 0.55rem; border-bottom: 1px solid var(--line); padding: 0.85rem 0; }
 .decision-grid > div { border-radius: 0.8rem; padding: 0.9rem; }
 .decision-grid p { margin-bottom: 0; }
@@ -476,7 +492,7 @@ dd { margin: 0; }
     .application-row > :last-child { grid-column: 1 / -1; }
     .detail-title { flex-direction: column; }
     .detail-verdict { align-items: flex-start; }
-    .company-strip, .company-snapshot, .facts-grid, .intelligence-grid, .responsibilities ul, .decision-grid, .compact-intelligence-grid { grid-template-columns: 1fr; }
+    .company-strip, .company-snapshot, .facts-grid, .intelligence-grid, .responsibilities ul, .decision-grid, .role-explainer-grid, .compact-intelligence-grid { grid-template-columns: 1fr; }
     .intelligence-grid article:first-child { grid-column: auto; }
     .profile-layout { grid-template-columns: 1fr; }
     .profile-workspace, .documents-grid, .analysis-columns, .cv-layout, .source-grid { grid-template-columns: 1fr; }

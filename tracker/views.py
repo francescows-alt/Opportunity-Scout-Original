@@ -1,5 +1,8 @@
+import hashlib
 from pathlib import Path
-from urllib.parse import urlparse
+import re
+import unicodedata
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -21,7 +24,7 @@ from .forms import (
     QuickInboxForm,
     SearchCampaignForm,
 )
-from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle
 
 
 GENERIC_QUALIFICATION_TERMS = (
@@ -36,6 +39,28 @@ GENERIC_QUALIFICATION_TERMS = (
 def _is_concrete_qualification(requirement):
     normalized = " ".join(requirement.lower().split())
     return bool(normalized) and not any(term in normalized for term in GENERIC_QUALIFICATION_TERMS)
+
+
+def _canonicalize_url(url):
+    parsed = urlsplit(url.strip())
+    host = parsed.netloc.lower().removeprefix("www.")
+    path = re.sub(r"/+", "/", parsed.path).rstrip("/") or "/"
+    stable_keys = {"jk", "jobid", "gh_jid", "lever-source"}
+    query = urlencode(sorted(
+        (key.lower(), value) for key, value in parse_qsl(parsed.query)
+        if key.lower() in stable_keys
+    ))
+    return urlunsplit(("https", host, path, query, ""))
+
+
+def _normalized_words(value):
+    value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
+    return " ".join(re.findall(r"[a-z0-9]+", value))
+
+
+def _opportunity_fingerprint(company, title, location):
+    identity = "|".join((_normalized_words(company), _normalized_words(title), _normalized_words(location)))
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def home(request):
@@ -59,6 +84,10 @@ def dashboard(request):
         Q(verification_status=Opportunity.VerificationStatus.PENDING)
         | Q(company_country="")
         | Q(company_industry="")
+        | Q(what_you_would_do="")
+        | Q(what_company_needs="")
+        | Q(candidate_fee="")
+        | Q(compensation="")
     )
     if review == "serious":
         opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.QUALIFIED)
@@ -66,6 +95,8 @@ def dashboard(request):
         opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.CLARIFY)
     elif review == "research":
         opportunities = opportunities.filter(incomplete_research)
+    elif review == "favorites":
+        opportunities = opportunities.filter(is_favorite=True)
     elif review == "not_suitable":
         opportunities = opportunities.filter(verification_status__in=[
             Opportunity.VerificationStatus.UNSUITABLE,
@@ -105,8 +136,17 @@ def dashboard(request):
         "clarify_count": all_opportunities.filter(
             verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
+        "favorites_count": all_opportunities.filter(is_favorite=True).count(),
     }
     return render(request, "tracker/dashboard.html", context)
+
+
+@require_POST
+def toggle_favorite(request, opportunity_id):
+    opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    opportunity.is_favorite = not opportunity.is_favorite
+    opportunity.save(update_fields=["is_favorite", "updated_at"])
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
 
 
 @require_POST
@@ -123,11 +163,31 @@ def discover_internships(request):
     try:
         batch = research_internships(campaign, profile)
         added = 0
-        updated = 0
+        duplicates = 0
+        fee_blocked = 0
+        known_urls = {
+            opportunity.canonical_url or _canonicalize_url(opportunity.source_url)
+            for opportunity in Opportunity.objects.filter(campaign=campaign)
+            if opportunity.source_url
+        }
+        known_fingerprints = {
+            opportunity.fingerprint or _opportunity_fingerprint(
+                opportunity.organization.name, opportunity.title, opportunity.location,
+            )
+            for opportunity in Opportunity.objects.filter(campaign=campaign).select_related("organization")
+        }
         for item in batch.opportunities:
             source_url = item.source_url.strip()
             parsed = urlparse(source_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                continue
+            canonical_url = _canonicalize_url(source_url)
+            fingerprint = _opportunity_fingerprint(item.company, item.title, item.location)
+            if canonical_url in known_urls or fingerprint in known_fingerprints:
+                duplicates += 1
+                continue
+            if item.candidate_fee_required:
+                fee_blocked += 1
                 continue
             organization = Organization.objects.filter(name__iexact=item.company.strip()).first()
             if organization is None:
@@ -136,7 +196,6 @@ def discover_internships(request):
             fit_summary = item.fit_summary.strip()
             if missing:
                 fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
-            opportunity = Opportunity.objects.filter(campaign=campaign, source_url=source_url).first()
             values = {
                 "organization": organization,
                 "title": item.title.strip(),
@@ -146,28 +205,40 @@ def discover_internships(request):
                 "match_score": item.match_score,
                 "fit_summary": fit_summary,
                 "next_action": item.next_action.strip(),
+                "candidate_fee_required": item.candidate_fee_required,
+                "candidate_fee": item.candidate_fee.strip(),
+                "compensation": item.compensation.strip(),
+                "canonical_url": canonical_url,
+                "fingerprint": fingerprint,
                 "verification_status": Opportunity.VerificationStatus.PENDING,
                 "verified_at": None,
             }
-            if opportunity:
-                for field, value in values.items():
-                    setattr(opportunity, field, value)
-                opportunity.save(update_fields=list(values) + ["updated_at"])
-                updated += 1
-            else:
-                Opportunity.objects.create(
-                    campaign=campaign,
-                    source_url=source_url,
-                    status=Opportunity.Status.DISCOVERED,
-                    **values,
-                )
-                added += 1
+            Opportunity.objects.create(
+                campaign=campaign,
+                source_url=source_url,
+                status=Opportunity.Status.DISCOVERED,
+                **values,
+            )
+            known_urls.add(canonical_url)
+            known_fingerprints.add(fingerprint)
+            added += 1
+        next_sequence = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
+        SearchCycle.objects.create(
+            campaign=campaign,
+            sequence=next_sequence,
+            strategy=batch.search_strategy.strip(),
+            queries=batch.queries_used,
+            sources=batch.sources_searched,
+            found_count=len(batch.opportunities),
+            added_count=added,
+            duplicate_count=duplicates,
+        )
         ChatMessage.objects.create(
             scope=ChatMessage.Scope.GENERAL,
             role=ChatMessage.Role.ASSISTANT,
-            content=f"Autonomous search complete. {batch.summary} I added {added} new possibilities and refreshed {updated} existing ones. Nothing was applied to.",
+            content=f"Autonomous search complete. {batch.summary} I added {added}, blocked {duplicates} duplicates and excluded {fee_blocked} fee-charging programs. Nothing was applied to.",
         )
-        messages.success(request, f"Robert found and checked the web: {added} new possibilities added, {updated} existing ones refreshed.")
+        messages.success(request, f"Robert added {added} new possibilities, blocked {duplicates} duplicates and excluded {fee_blocked} fee-charging programs.")
     except AIUnavailable as error:
         messages.error(request, str(error))
     except Exception:
@@ -192,6 +263,10 @@ def qualify_discoveries(request):
             Q(verification_status=Opportunity.VerificationStatus.PENDING)
             | Q(company_country="")
             | Q(company_industry="")
+            | Q(what_you_would_do="")
+            | Q(what_company_needs="")
+            | Q(candidate_fee="")
+            | Q(compensation="")
         )
         .order_by("-match_score", "-created_at")[:8]
     )
@@ -211,16 +286,23 @@ def qualify_discoveries(request):
             parsed_website = urlparse(website)
             if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
                 opportunity.organization.website = website
+            logo_url = report.company_logo_url.strip()
+            parsed_logo = urlparse(logo_url)
+            if parsed_logo.scheme in {"http", "https"} and parsed_logo.netloc:
+                opportunity.organization.logo_url = logo_url
             if report.company_location.strip():
                 opportunity.organization.location = report.company_location.strip()
-            opportunity.organization.save(update_fields=["website", "location", "updated_at"])
+            opportunity.organization.save(update_fields=["website", "logo_url", "location", "updated_at"])
 
             safe_sources = []
             for source in report.sources:
                 parsed_source = urlparse(source.url.strip())
                 if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
                     safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
-            opportunity.verification_status = report.verdict
+            opportunity.verification_status = (
+                Opportunity.VerificationStatus.UNSUITABLE
+                if report.candidate_fee_required else report.verdict
+            )
             opportunity.company_description = report.company_description.strip()
             opportunity.company_location = report.company_location.strip()
             opportunity.company_size = report.company_size.strip()
@@ -235,6 +317,11 @@ def qualify_discoveries(request):
             opportunity.internship_dates = report.internship_dates.strip()
             opportunity.application_deadline_text = report.application_deadline.strip()
             opportunity.responsibilities = report.responsibilities
+            opportunity.what_you_would_do = report.what_you_would_do.strip()
+            opportunity.what_company_needs = report.what_company_needs.strip()
+            opportunity.candidate_fee_required = report.candidate_fee_required
+            opportunity.candidate_fee = report.candidate_fee.strip()
+            opportunity.compensation = report.compensation.strip()
             opportunity.work_arrangement = report.work_arrangement.strip()
             opportunity.japanese_requirement = report.japanese_requirement.strip()
             opportunity.visa_support = report.visa_support.strip()
@@ -250,7 +337,7 @@ def qualify_discoveries(request):
             opportunity.research_summary = batch.summary.strip()
             opportunity.next_action = report.next_action.strip()
             opportunity.verified_at = timezone.now()
-            if report.verdict == Opportunity.VerificationStatus.QUALIFIED:
+            if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
                 opportunity.status = Opportunity.Status.QUALIFIED
             opportunity.save(update_fields=[
                 "verification_status", "company_description", "company_location", "company_size",
@@ -258,6 +345,8 @@ def qualify_discoveries(request):
                 "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
                 "location", "internship_dates", "work_arrangement", "japanese_requirement",
                 "application_deadline_text", "responsibilities",
+                "what_you_would_do", "what_company_needs", "candidate_fee_required",
+                "candidate_fee", "compensation",
                 "visa_support", "thesis_compatibility", "job_description", "match_score",
                 "fit_summary", "requirements_assessment", "research_sources", "research_summary",
                 "next_action", "verified_at", "status", "updated_at",

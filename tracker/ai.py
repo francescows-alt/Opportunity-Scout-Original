@@ -8,7 +8,19 @@ from django.utils import timezone
 from openai import OpenAI
 from pydantic import BaseModel, Field
 
-from .models import AIUsage, CandidateProfile, ChatMessage, InboxItem, Opportunity, SearchCampaign
+from .models import AIUsage, CandidateProfile, ChatMessage, InboxItem, Opportunity, SearchCampaign, SearchCycle
+
+
+SEARCH_STRATEGIES = (
+    "Direct employer career pages and English internship keywords",
+    "Japanese job boards using bilingual long-term internship keywords",
+    "Startup databases, accelerator cohorts, and venture-capital portfolios",
+    "International chambers, trade groups, and member-company career pages",
+    "University career portals and graduate internship directories",
+    "Function-led searches across growth, sales, marketing, research, and strategy",
+    "Cold-outreach targets among growing international companies in Japan",
+    "ATS-focused searches across Workday, Greenhouse, Lever, and SmartRecruiters",
+)
 
 
 class AIUnavailable(Exception):
@@ -111,11 +123,17 @@ class InternshipDiscovery(BaseModel):
     match_score: int = Field(ge=0, le=100)
     fit_summary: str = Field(max_length=1200)
     missing_information: list[str] = Field(max_length=5)
+    candidate_fee_required: bool
+    candidate_fee: str = Field(max_length=200)
+    compensation: str = Field(max_length=200)
     next_action: str = Field(max_length=240)
 
 
 class InternshipDiscoveryBatch(BaseModel):
     summary: str = Field(max_length=800)
+    search_strategy: str = Field(max_length=240)
+    queries_used: list[str] = Field(max_length=12)
+    sources_searched: list[str] = Field(max_length=12)
     opportunities: list[InternshipDiscovery] = Field(max_length=12)
 
 
@@ -139,6 +157,7 @@ class OpportunityResearch(BaseModel):
     company_country: str = Field(max_length=120)
     company_industry: str = Field(max_length=160)
     company_website: str = Field(max_length=500)
+    company_logo_url: str = Field(max_length=500)
     company_reputation: str = Field(max_length=600)
     cv_value: str = Field(max_length=600)
     international_environment: str = Field(max_length=600)
@@ -153,6 +172,11 @@ class OpportunityResearch(BaseModel):
     thesis_compatibility: str = Field(max_length=240)
     role_summary: str = Field(max_length=1400)
     responsibilities: list[str] = Field(max_length=10)
+    what_you_would_do: str = Field(max_length=1800)
+    what_company_needs: str = Field(max_length=1800)
+    candidate_fee_required: bool
+    candidate_fee: str = Field(max_length=200)
+    compensation: str = Field(max_length=200)
     match_score: int = Field(ge=0, le=100)
     fit_summary: str = Field(max_length=1400)
     requirements: list[RequirementAssessment] = Field(max_length=8)
@@ -305,24 +329,40 @@ def research_internships(campaign, profile):
     campaign_data["start_date"] = str(campaign_data["start_date"] or "")
     campaign_data["end_date"] = str(campaign_data["end_date"] or "")
     profile_data = profile.structured_profile or {"profile_notes": profile.profile_draft[:5000]}
+    previous_cycles = list(
+        SearchCycle.objects.filter(campaign=campaign)
+        .values("sequence", "strategy", "queries", "sources")[:20]
+    )
+    cycle_number = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
+    required_strategy = SEARCH_STRATEGIES[(cycle_number - 1) % len(SEARCH_STRATEGIES)]
+    known_roles = list(
+        Opportunity.objects.filter(campaign=campaign)
+        .select_related("organization")
+        .values("organization__name", "title", "source_url")[:500]
+    )
     response = _client().responses.parse(
         model=settings.OPENAI_CHAT_MODEL,
         tools=[{"type": "web_search"}],
         max_tool_calls=8,
         instructions=ROBERT_RULES + """
 Act as a careful internship research analyst. Search the live public web autonomously using the active campaign and verified candidate profile.
+Be skeptical and realistic. A famous company is not automatically a fit, a vague page is not a vacancy, and missing evidence must never become a positive claim.
 Find up to 12 strong possibilities, prioritizing currently advertised internships with direct employer or reputable job-board pages. You may also include unusually strong companies as cold-outreach targets, but label them cold_outreach and link to an official company page.
 Every result must have a real source URL you actually found. Never invent a vacancy, deadline, visa policy, language requirement, company fact, or URL.
-Prefer primary company career pages. Exclude a role when the source clearly requires native Japanese or clearly conflicts with a hard campaign requirement.
+Prefer primary company career pages. Exclude a role when the source clearly requires native Japanese or clearly conflicts with a hard campaign requirement. Exclude internship-placement and study-abroad programs that charge the candidate a participation, placement, tuition, or program fee. Do not confuse candidate fees with normal personal relocation costs.
 The requested dates may be in the future. Do not claim a role supports those dates unless the source says so; instead list that as missing information.
 Score fit conservatively against verified facts. The description and fit summary must clearly distinguish confirmed facts from unknowns.
 Use missing_information for visa support, exact dates, thesis compatibility, Japanese level, or work arrangement when the source does not establish them.
+Do not return any role or company already present in KNOWN ROLES, even if you find it through a different URL or slightly different title. Use the required strategy for this cycle, vary the keywords from previous cycles, and report the actual queries and source types used.
 Return only distinct, useful results. Do not apply, contact anyone, or claim that any action was taken.
 """,
         input=(
             f"Today is {timezone.localdate().isoformat()}.\n"
+            f"SEARCH CYCLE: {cycle_number}\nREQUIRED NEW STRATEGY: {required_strategy}\n"
             "ACTIVE SEARCH CAMPAIGN:\n" + json.dumps(campaign_data, ensure_ascii=False, default=str)[:9000]
             + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:9000]
+            + "\n\nPREVIOUS SEARCH CYCLES TO AVOID REPEATING:\n" + json.dumps(previous_cycles, ensure_ascii=False, default=str)[:10000]
+            + "\n\nKNOWN ROLES — DO NOT RETURN THESE AGAIN:\n" + json.dumps(known_roles, ensure_ascii=False)[:18000]
             + "\n\nSearch broadly enough to include prestigious international firms, strong startups and SMEs, and unexpectedly valuable CV-building work."
         ),
         text_format=InternshipDiscoveryBatch,
@@ -360,12 +400,15 @@ def qualify_opportunities(campaign, profile, opportunities):
         max_tool_calls=12,
         instructions=ROBERT_RULES + """
 Act as a rigorous job-verification and candidate-fit analyst. Open and investigate every supplied opportunity and search for corroborating official information.
+Be skeptical and realistic. Prestige must not inflate the score. Separate facts, reasonable inference, and unknowns. Check that the exact vacancy—not merely the company—still exists and is open.
 Return one report for every supplied opportunity_id. Prefer the vacancy page, official company website and official careers or immigration information. Every report must contain the useful source URLs you actually consulted.
 Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; expired when a trustworthy source shows it is closed or past its deadline; unverified when the role/page cannot be verified.
 Never interpret missing information as a negative fact. Use clear phrases such as "Not stated in the source" for unknown dates, visa support, work arrangement, thesis compatibility or Japanese level.
 Build a concise company description, headquarters country, industry or niche, company location, size, reputation, CV value, international environment, growth outlook, work culture, role summary, responsibilities, application deadline, and practical facts. Do not produce promotional filler. Research the official company site and credible company-profile sources before leaving company facts unknown. For company_country, return only the headquarters country. For company_industry, return a specific short label such as "Fintech" or "B2B SaaS". For company_size, return only a compact employee range such as "51–200 employees" or "10,000+ employees"; never include an explanation. Use "Not found" only after a genuine search. Reputation and work-culture claims require evidence; otherwise say they are not established by reliable public sources.
-Write for scanning, not storytelling. Keep company_description and role_summary to at most two short sentences. Keep responsibilities as short verb-led bullets.
+Use company_logo_url only for a trustworthy official logo or site image URL; otherwise return an empty string.
+Write for scanning, not storytelling. Keep company_description and role_summary to at most two short sentences. Extract five to eight specific responsibility bullets when the source supports them. In what_you_would_do, explain the likely day-to-day work in three to five grounded sentences without inventing tasks. In what_company_needs, summarize the concrete candidate they seek in three to five grounded sentences without generic personality filler.
 Practical fields must be bare factual answers, normally 2–10 words: internship_dates such as "Feb–Jun 2027" or "Not stated"; application_deadline such as "15 Nov 2026" or "Not stated"; work_arrangement such as "Hybrid"; japanese_requirement such as "Native required", "Intermediate preferred", or "Not stated"; visa_support such as "Provided", "Not provided", or "Not stated"; thesis_compatibility such as "Confirmed", "Possible—ask employer", or "Not stated". Do not put explanations into these fields.
+Explicitly check whether the candidate must pay any placement, participation, tuition, or program fee. Set candidate_fee_required=true when such a fee is mandatory and state the exact amount in candidate_fee when found. Keep this separate from ordinary relocation costs. Also report internship pay or stipend in compensation. A fee-charging placement program is unsuitable for this campaign even if the placement itself looks interesting.
 Extract no more than eight concrete, decision-relevant qualifications and compare each with the VERIFIED candidate profile. Useful qualifications include degree or student status, language level, specific experience, named software, availability, location or work authorization, a portfolio, and specific industry knowledge.
 Omit generic employer filler and personality adjectives such as proactive, motivated, passionate, team player, flexible, responsible, reliable, can-do attitude, excellent communicator, and willingness to learn. If it cannot be checked objectively against profile evidence, leave it out.
 Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Keep the requirement and evidence to one short line each. Put nuance in fit_summary, not here.
