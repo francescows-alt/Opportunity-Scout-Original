@@ -185,9 +185,9 @@ class DashboardTests(TestCase):
         self.assertContains(report, "Match")
         self.assertContains(report, "Check")
         self.assertContains(report, "More about Example Japan")
-        self.assertContains(report, "Responsibilities")
+        self.assertContains(report, "Main responsibilities")
         page_html = report.content.decode()
-        self.assertLess(page_html.index("back-to-list"), page_html.index("Other applications"))
+        self.assertLess(page_html.index("back-to-list"), page_html.index("Other opportunities"))
 
     def test_serious_list_only_shows_qualified_research(self):
         organization = Organization.objects.create(name="Serious Company")

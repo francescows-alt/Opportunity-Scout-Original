@@ -55,12 +55,17 @@ def dashboard(request):
         )
     if status:
         opportunities = opportunities.filter(status=status)
+    incomplete_research = (
+        Q(verification_status=Opportunity.VerificationStatus.PENDING)
+        | Q(company_country="")
+        | Q(company_industry="")
+    )
     if review == "serious":
         opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.QUALIFIED)
     elif review == "clarify":
         opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.CLARIFY)
     elif review == "research":
-        opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.PENDING)
+        opportunities = opportunities.filter(incomplete_research)
     elif review == "not_suitable":
         opportunities = opportunities.filter(verification_status__in=[
             Opportunity.VerificationStatus.UNSUITABLE,
@@ -76,9 +81,7 @@ def dashboard(request):
         selected = opportunities.filter(id=selected_id).first()
 
     all_opportunities = Opportunity.objects.all()
-    research_needed_count = all_opportunities.filter(
-        verification_status=Opportunity.VerificationStatus.PENDING,
-    ).count()
+    research_needed_count = all_opportunities.filter(incomplete_research).count()
     context = {
         "page": page,
         "selected": selected,
@@ -184,7 +187,12 @@ def qualify_discoveries(request):
         return redirect("profile")
     opportunities = list(
         Opportunity.objects.select_related("organization")
-        .filter(campaign=campaign, verification_status=Opportunity.VerificationStatus.PENDING)
+        .filter(campaign=campaign)
+        .filter(
+            Q(verification_status=Opportunity.VerificationStatus.PENDING)
+            | Q(company_country="")
+            | Q(company_industry="")
+        )
         .order_by("-match_score", "-created_at")[:8]
     )
     if not opportunities:
