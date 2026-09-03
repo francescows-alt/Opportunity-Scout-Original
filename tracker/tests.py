@@ -151,6 +151,7 @@ class DashboardTests(TestCase):
                 "requirements": [
                     {"requirement": "Marketing experience", "status": "have", "evidence": "Verified Mobal experience."},
                     {"requirement": "Native Japanese", "status": "unclear", "evidence": "The source does not state a native requirement."},
+                    {"requirement": "Self-motivated and proactive", "status": "have", "evidence": "Generic personality trait."},
                 ],
                 "sources": [{"title": "Official role", "url": "https://example.com/jobs/growth-intern"}],
                 "next_action": "Ask HR about visa support and thesis supervision.",
@@ -164,6 +165,8 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.application_deadline_text, "Not stated in the source")
         self.assertEqual(opportunity.responsibilities[0], "Research customers")
         self.assertEqual(opportunity.requirements_assessment[0]["status"], "have")
+        self.assertEqual(len(opportunity.requirements_assessment), 2)
+        self.assertNotIn("proactive", str(opportunity.requirements_assessment).lower())
         self.assertEqual(opportunity.research_sources[0]["title"], "Official role")
         self.assertIsNotNone(opportunity.verified_at)
 
@@ -172,8 +175,9 @@ class DashboardTests(TestCase):
         self.assertContains(report, "Application page")
         self.assertContains(report, "Official website")
         self.assertContains(report, "Japanese")
-        self.assertContains(report, "You have it")
-        self.assertContains(report, "You don’t have it")
+        self.assertContains(report, "Match")
+        self.assertContains(report, "Check")
+        self.assertContains(report, "Concrete requirements only")
         self.assertContains(report, "More about Example Japan")
         self.assertContains(report, "Main responsibilities")
         page_html = report.content.decode()

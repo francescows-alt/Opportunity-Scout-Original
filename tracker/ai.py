@@ -153,7 +153,7 @@ class OpportunityResearch(BaseModel):
     responsibilities: list[str] = Field(max_length=10)
     match_score: int = Field(ge=0, le=100)
     fit_summary: str = Field(max_length=1400)
-    requirements: list[RequirementAssessment] = Field(max_length=15)
+    requirements: list[RequirementAssessment] = Field(max_length=8)
     sources: list[ResearchSource] = Field(max_length=8)
     next_action: str = Field(max_length=240)
 
@@ -364,8 +364,9 @@ Never interpret missing information as a negative fact. Use clear phrases such a
 Build a concise company description, company location, approximate size only when sourced, reputation, CV value, international environment, growth outlook, work culture, role summary, responsibilities, application deadline, and practical facts. Do not produce promotional filler. Reputation and work-culture claims require evidence; otherwise say they are not established by reliable public sources.
 Write for scanning, not storytelling. Keep company_description and role_summary to at most two short sentences. Keep responsibilities as short verb-led bullets.
 Practical fields must be bare factual answers, normally 2–10 words: internship_dates such as "Feb–Jun 2027" or "Not stated"; application_deadline such as "15 Nov 2026" or "Not stated"; work_arrangement such as "Hybrid"; japanese_requirement such as "Native required", "Intermediate preferred", or "Not stated"; visa_support such as "Provided", "Not provided", or "Not stated"; thesis_compatibility such as "Confirmed", "Possible—ask employer", or "Not stated". Do not put explanations into these fields.
-Extract the role's meaningful qualifications and compare each with the VERIFIED candidate profile. Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Explain the evidence briefly.
-Keep each requirement and its evidence concise. Put nuance in fit_summary, not in the practical fact cards.
+Extract no more than eight concrete, decision-relevant qualifications and compare each with the VERIFIED candidate profile. Useful qualifications include degree or student status, language level, specific experience, named software, availability, location or work authorization, a portfolio, and specific industry knowledge.
+Omit generic employer filler and personality adjectives such as proactive, motivated, passionate, team player, flexible, responsible, reliable, can-do attitude, excellent communicator, and willingness to learn. If it cannot be checked objectively against profile evidence, leave it out.
+Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Keep the requirement and evidence to one short line each. Put nuance in fit_summary, not here.
 Do not penalize soft preferences as if they were hard rules. Native Japanese requirements, incompatible dates and inability to satisfy graduation/thesis requirements are material concerns when explicitly verified.
 Recalculate match_score conservatively after research. Provide a practical next action. Never apply, contact anyone, or invent facts.
 """,

@@ -24,6 +24,20 @@ from .forms import (
 from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign
 
 
+GENERIC_QUALIFICATION_TERMS = (
+    "proactive", "self-motivated", "motivated", "passionate", "team player",
+    "positive attitude", "can-do attitude", "flexible working style",
+    "responsible work", "reliable and consistent", "willingness to learn",
+    "initiative and ability to work independently", "ability to work independently",
+    "excellent communication", "clear communication", "self-directed remote work",
+)
+
+
+def _is_concrete_qualification(requirement):
+    normalized = " ".join(requirement.lower().split())
+    return bool(normalized) and not any(term in normalized for term in GENERIC_QUALIFICATION_TERMS)
+
+
 def home(request):
     return redirect("dashboard")
 
@@ -220,7 +234,10 @@ def qualify_discoveries(request):
             opportunity.job_description = report.role_summary.strip() or opportunity.job_description
             opportunity.match_score = report.match_score
             opportunity.fit_summary = report.fit_summary.strip()
-            opportunity.requirements_assessment = [item.model_dump() for item in report.requirements]
+            opportunity.requirements_assessment = [
+                item.model_dump() for item in report.requirements
+                if _is_concrete_qualification(item.requirement)
+            ]
             opportunity.research_sources = safe_sources
             opportunity.research_summary = batch.summary.strip()
             opportunity.next_action = report.next_action.strip()
