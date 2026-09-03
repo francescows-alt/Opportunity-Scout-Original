@@ -8,16 +8,24 @@
     <link rel="stylesheet" href="{% static 'tracker/styles.css' %}">
 </head>
 <body>
-    <header class="site-header">
-        <a class="brand" href="{% url 'campaign-list' %}">
-            <span class="brand-mark">OS</span>
-            <span>Opportunity Scout</span>
-        </a>
-        <span class="local-badge">Private · running locally</span>
-    </header>
-    <main class="page-shell">
-        {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
-        {% block content %}{% endblock %}
-    </main>
+    <div class="app-frame">
+        <header class="site-header">
+            <a class="brand" href="{% url 'dashboard' %}">
+                <span class="brand-mark">◇</span>
+                <span>Internship OS</span>
+            </a>
+            <span class="local-badge">Private · local</span>
+        </header>
+        <nav class="main-nav" aria-label="Main navigation">
+            <a class="{% if request.resolver_match.url_name == 'dashboard' %}current{% endif %}" href="{% url 'dashboard' %}">▦ <span>Dashboard</span></a>
+            <a class="{% if 'opportunity' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'opportunity-create' %}">＋ <span>Add job</span></a>
+            <a class="{% if request.resolver_match.url_name == 'profile' %}current{% endif %}" href="{% url 'profile' %}">♙ <span>My profile</span></a>
+            <a class="{% if 'campaign' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'campaign-list' %}">☷ <span>Search rules</span></a>
+        </nav>
+        <main class="page-shell">
+            {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
+            {% block content %}{% endblock %}
+        </main>
+    </div>
 </body>
 </html>

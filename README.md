@@ -1,8 +1,9 @@
 # Opportunity Scout
 
-A private, reusable job-search dashboard. The first version manages editable
-search campaigns; later versions will add organizations, opportunities,
-research, evaluation, outreach drafts, and approval-controlled automation.
+A private, reusable job-search dashboard. The current version manages editable
+search campaigns, applications, companies, a personal profile, and local
+supporting documents. Later versions will add research, evaluation, outreach
+drafts, and approval-controlled automation.
 
 ## Run it on this Mac
 
@@ -28,8 +29,12 @@ The application runs only while that terminal command is active. Press
 - Create search campaigns
 - Edit every campaign requirement and preference
 - Pause or activate campaigns
+- Add and edit advertised jobs or cold-outreach targets
+- Search and filter applications, with pagination for large lists
+- Track match score, status, next action, deadlines, and CV submission date
+- Save a long personal description
+- Upload profile documents locally
 - Keep local personal data out of Git
 
 The application does not yet search the web, call paid APIs, send messages, or
 submit applications.
-

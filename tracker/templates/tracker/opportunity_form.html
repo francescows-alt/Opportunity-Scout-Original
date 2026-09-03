@@ -1,0 +1,40 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}{{ page_title }} · Internship OS{% endblock %}
+{% block content %}
+<div class="form-heading"><div><a class="back-link" href="{% url 'dashboard' %}">← Back to applications</a><p class="eyebrow">Manual tracking</p><h1>{{ page_title }}</h1><p class="lede">Save what you know. Unknown fields can remain empty and be researched later.</p></div></div>
+<form method="post" class="campaign-form compact-form">
+    {% csrf_token %}
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">1</span><div><h2>Company and role</h2><p>This can be a published vacancy or a company for cold outreach.</p></div></div>
+        <div class="field-grid two-columns">
+            {% include "tracker/field.html" with field=form.campaign %}
+            {% include "tracker/field.html" with field=form.company_name %}
+            {% include "tracker/field.html" with field=form.company_website %}
+            {% include "tracker/field.html" with field=form.title %}
+            {% include "tracker/field.html" with field=form.kind %}
+            {% include "tracker/field.html" with field=form.location %}
+            {% include "tracker/field.html" with field=form.source_url %}
+            {% include "tracker/field.html" with field=form.status %}
+        </div>
+    </section>
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">2</span><div><h2>Progress</h2><p>Track your next action, dates, and any provisional match score.</p></div></div>
+        <div class="field-grid two-columns">
+            {% include "tracker/field.html" with field=form.match_score %}
+            {% include "tracker/field.html" with field=form.next_action %}
+            {% include "tracker/field.html" with field=form.deadline %}
+            {% include "tracker/field.html" with field=form.submitted_on %}
+        </div>
+    </section>
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">3</span><div><h2>Information</h2><p>Keep the original description, your reasoning, and private notes together.</p></div></div>
+        <div class="field-grid">
+            {% include "tracker/field.html" with field=form.job_description %}
+            {% include "tracker/field.html" with field=form.fit_summary %}
+            {% include "tracker/field.html" with field=form.notes %}
+        </div>
+    </section>
+    <div class="form-actions"><a class="button secondary" href="{% url 'dashboard' %}">Cancel</a><button class="button primary" type="submit">Save application</button></div>
+</form>
+{% endblock %}

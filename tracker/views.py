@@ -1,8 +1,50 @@
 from django.contrib import messages
+from django.core.paginator import Paginator
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import SearchCampaignForm
-from .models import SearchCampaign
+from .forms import CandidateProfileForm, OpportunityForm, ProfileDocumentForm, SearchCampaignForm
+from .models import CandidateProfile, Opportunity, SearchCampaign
+
+
+def dashboard(request):
+    opportunities = Opportunity.objects.select_related("campaign", "organization")
+    query = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    if query:
+        opportunities = opportunities.filter(
+            Q(organization__name__icontains=query)
+            | Q(title__icontains=query)
+            | Q(location__icontains=query)
+        )
+    if status:
+        opportunities = opportunities.filter(status=status)
+
+    paginator = Paginator(opportunities, 25)
+    page = paginator.get_page(request.GET.get("page"))
+    selected = None
+    selected_id = request.GET.get("selected")
+    if selected_id:
+        selected = opportunities.filter(id=selected_id).first()
+    if selected is None and page.object_list:
+        selected = page.object_list[0]
+
+    all_opportunities = Opportunity.objects.all()
+    context = {
+        "page": page,
+        "selected": selected,
+        "query": query,
+        "current_status": status,
+        "statuses": Opportunity.Status.choices,
+        "tracked_count": all_opportunities.count(),
+        "draft_count": all_opportunities.filter(status=Opportunity.Status.DRAFT_READY).count(),
+        "sent_count": all_opportunities.filter(submitted_on__isnull=False).count(),
+        "action_count": all_opportunities.exclude(next_action="").exclude(
+            status__in=[Opportunity.Status.REJECTED, Opportunity.Status.OFFER]
+        ).count(),
+        "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
+    }
+    return render(request, "tracker/dashboard.html", context)
 
 
 def campaign_list(request):
@@ -29,4 +71,55 @@ def campaign_edit(request, campaign_id):
         return redirect("campaign-list")
     return render(request, "tracker/campaign_form.html", {
         "form": form, "page_title": "Edit search campaign", "campaign": campaign,
+    })
+
+
+def opportunity_create(request):
+    form = OpportunityForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        opportunity = form.save()
+        messages.success(request, f'"{opportunity.title}" at {opportunity.organization.name} was added.')
+        return redirect("dashboard")
+    return render(request, "tracker/opportunity_form.html", {
+        "form": form, "page_title": "Add an opportunity",
+    })
+
+
+def opportunity_edit(request, opportunity_id):
+    opportunity = get_object_or_404(Opportunity, id=opportunity_id)
+    form = OpportunityForm(request.POST or None, instance=opportunity)
+    if request.method == "POST" and form.is_valid():
+        opportunity = form.save()
+        messages.success(request, f'"{opportunity.title}" was updated.')
+        return redirect("dashboard")
+    return render(request, "tracker/opportunity_form.html", {
+        "form": form, "page_title": "Edit opportunity", "opportunity": opportunity,
+    })
+
+
+def profile(request):
+    candidate, _ = CandidateProfile.objects.get_or_create(pk=1)
+    profile_form = CandidateProfileForm(instance=candidate)
+    document_form = ProfileDocumentForm()
+
+    if request.method == "POST" and request.POST.get("action") == "save_profile":
+        profile_form = CandidateProfileForm(request.POST, instance=candidate)
+        if profile_form.is_valid():
+            profile_form.save()
+            messages.success(request, "Your profile description was saved.")
+            return redirect("profile")
+
+    if request.method == "POST" and request.POST.get("action") == "upload_document":
+        document_form = ProfileDocumentForm(request.POST, request.FILES)
+        if document_form.is_valid():
+            document = document_form.save(commit=False)
+            document.profile = candidate
+            document.save()
+            messages.success(request, f'"{document.label}" was uploaded locally.')
+            return redirect("profile")
+
+    return render(request, "tracker/profile.html", {
+        "candidate": candidate,
+        "profile_form": profile_form,
+        "document_form": document_form,
     })

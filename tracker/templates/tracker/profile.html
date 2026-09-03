@@ -1,0 +1,37 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}My profile · Internship OS{% endblock %}
+{% block content %}
+<section class="profile-heading"><div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">Describe yourself freely and keep supporting documents together. Files stay on this Mac.</p></div></section>
+
+<div class="profile-layout">
+    <form method="post" class="form-section profile-description">
+        {% csrf_token %}<input type="hidden" name="action" value="save_profile">
+        <div class="section-intro"><span class="step-number">1</span><div><h2>Tell the assistant about you</h2><p>A long, messy description is fine. Later we will extract facts and ask you to verify them.</p></div></div>
+        <div class="field-grid">
+            {% include "tracker/field.html" with field=profile_form.full_name %}
+            {% include "tracker/field.html" with field=profile_form.headline %}
+            {% include "tracker/field.html" with field=profile_form.long_description %}
+        </div>
+        <div class="form-actions"><button class="button primary" type="submit">Save my description</button></div>
+    </form>
+
+    <aside class="documents-panel">
+        <div class="section-intro"><span class="step-number">2</span><div><h2>My documents</h2><p>CVs, transcripts, certificates, images, and university files.</p></div></div>
+        <form method="post" enctype="multipart/form-data" class="upload-form">
+            {% csrf_token %}<input type="hidden" name="action" value="upload_document">
+            {% include "tracker/field.html" with field=document_form.label %}
+            {% include "tracker/field.html" with field=document_form.file %}
+            <button class="button primary" type="submit">Upload document</button>
+            <p class="privacy-note">PDF, Word, text, PNG, or JPG · maximum 10 MB · local only</p>
+        </form>
+        <div class="document-list">
+            {% for document in candidate.documents.all %}
+                <a href="{{ document.file.url }}" target="_blank"><strong>{{ document.label }}</strong><small>{{ document.file.name|cut:"profile_documents/" }} · {{ document.uploaded_at|date:"j M Y" }}</small></a>
+            {% empty %}
+                <div class="document-empty">No documents uploaded yet.</div>
+            {% endfor %}
+        </div>
+    </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "tracker/base.html" %}
+
+{% block content %}
+<section class="dashboard-heading">
+    <div>
+        <h1>Applications</h1>
+        <p class="lede">{% now "l, j F" %}{% if active_campaign %} · {{ active_campaign.name }}{% endif %}</p>
+    </div>
+    <a class="button primary add-button" href="{% url 'opportunity-create' %}">＋<span>Add job</span></a>
+</section>
+
+<section class="stats-grid" aria-label="Application totals">
+    <article><span>Tracked</span><strong>{{ tracked_count }}</strong></article>
+    <article><span>Draft ready</span><strong>{{ draft_count }}</strong></article>
+    <article><span>CVs sent</span><strong>{{ sent_count }}</strong></article>
+    <article><span>Needs action</span><strong>{{ action_count }}</strong></article>
+</section>
+
+<form method="get" class="filters">
+    <label class="search-box"><span>⌕</span><input type="search" name="q" value="{{ query }}" placeholder="Search company, role, or location"></label>
+    <select name="status" aria-label="Filter by status" onchange="this.form.submit()">
+        <option value="">All applications</option>
+        {% for value, label in statuses %}<option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="button secondary" type="submit">Search</button>
+</form>
+
+{% if page.object_list %}
+<section class="applications-table">
+    <div class="table-header"><span>Company and role</span><span>Match</span><span>Status</span><span>Next action</span></div>
+    {% for opportunity in page.object_list %}
+    <a class="application-row{% if selected.id == opportunity.id %} selected{% endif %}" href="?selected={{ opportunity.id }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}">
+        <span class="company-cell"><strong>{{ opportunity.organization.name }}</strong><small>{{ opportunity.title }}{% if opportunity.location %} · {{ opportunity.location }}{% endif %}</small></span>
+        <span class="match-cell">{% if opportunity.match_score != None %}{{ opportunity.match_score }}%{% else %}—{% endif %}</span>
+        <span><em class="status-pill status-{{ opportunity.status }}">{{ opportunity.get_status_display }}</em></span>
+        <span>{{ opportunity.next_action|default:"No action set" }}</span>
+    </a>
+    {% endfor %}
+</section>
+
+{% if page.paginator.num_pages > 1 %}
+<nav class="pagination">
+    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}&status={{ current_status }}">← Previous</a>{% endif %}
+    <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}&status={{ current_status }}">Next →</a>{% endif %}
+</nav>
+{% endif %}
+
+{% if selected %}
+<section class="selected-detail">
+    <div class="detail-title">
+        <div><h2>{{ selected.organization.name }}</h2><p>{{ selected.title }}{% if selected.location %} · {{ selected.location }}{% endif %}</p></div>
+        <strong class="detail-score">{% if selected.match_score != None %}{{ selected.match_score }}% match{% else %}Not scored{% endif %}</strong>
+    </div>
+    <div class="detail-block"><h3>Why it may fit</h3><p>{{ selected.fit_summary|default:"No fit assessment yet. Later, the assistant will create an evidence-based explanation for your approval."|linebreaksbr }}</p></div>
+    <div class="detail-block"><h3>Next action</h3><p class="next-action-box">{{ selected.next_action|default:"Choose the next useful action for this opportunity." }}</p></div>
+    <div class="detail-actions"><a class="button primary" href="{% url 'opportunity-edit' selected.id %}">Edit application</a>{% if selected.source_url %}<a class="button secondary" href="{{ selected.source_url }}" target="_blank" rel="noopener">Open source</a>{% endif %}</div>
+</section>
+{% endif %}
+{% else %}
+<section class="empty-state">
+    <div class="empty-icon">◎</div><h2>No applications yet</h2>
+    <p>Add a vacancy you found or a company you may want to contact.</p>
+    <a class="button primary" href="{% url 'opportunity-create' %}">Add your first job</a>
+</section>
+{% endif %}
+{% endblock %}
