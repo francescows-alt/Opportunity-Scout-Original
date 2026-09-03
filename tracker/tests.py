@@ -1,13 +1,16 @@
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
+from .ai import DocumentProfileAnalysis, EvidenceItem
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
 
 
+@override_settings(OPENAI_API_KEY="")
 class SearchCampaignTests(TestCase):
     def test_campaign_list_page_loads(self):
         response = self.client.get(reverse("campaign-list"))
@@ -89,6 +92,7 @@ class DashboardTests(TestCase):
         self.assertEqual(response.context["page"].paginator.num_pages, 2)
 
 
+@override_settings(OPENAI_API_KEY="")
 class CandidateProfileTests(TestCase):
     def test_home_starts_at_applications(self):
         response = self.client.get(reverse("home"))
@@ -132,7 +136,37 @@ class CandidateProfileTests(TestCase):
         self.assertContains(response, "What are you studying")
         self.assertEqual(ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE).count(), 1)
 
+    @patch("tracker.views.analyze_profile_documents")
+    def test_document_analysis_requires_review_before_updating_profile(self, analyze):
+        analyze.return_value = DocumentProfileAnalysis(
+            proposed_profile="Verified proposed profile",
+            evidence=[EvidenceItem(claim="Studies business", source="cv.pdf", evidence="Business student")],
+            uncertainties=["Graduation date is unclear"],
+            follow_up_questions=["When do you graduate?"],
+            summary="I extracted the supported facts.",
+        )
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            self.client.post(reverse("profile"), {
+                "action": "upload_document",
+                "files": SimpleUploadedFile("cv.pdf", b"example CV", content_type="application/pdf"),
+            })
+            response = self.client.post(reverse("profile"), {"action": "analyze_documents"})
+            self.assertRedirects(response, reverse("profile"))
+            profile = CandidateProfile.objects.get(pk=1)
+            self.assertEqual(profile.document_analysis_status, CandidateProfile.AnalysisStatus.READY)
+            self.assertEqual(profile.profile_draft, "")
+            self.assertEqual(profile.document_profile_proposal, "Verified proposed profile")
 
+            response = self.client.post(reverse("profile"), {
+                "action": "accept_document_profile",
+                "document_profile_proposal": "Verified proposed profile with my correction",
+            })
+            self.assertRedirects(response, reverse("profile"))
+            profile.refresh_from_db()
+            self.assertEqual(profile.profile_draft, "Verified proposed profile with my correction")
+
+
+@override_settings(OPENAI_API_KEY="")
 class RobertTests(TestCase):
     def test_question_is_saved_and_missing_setup_is_explained(self):
         response = self.client.post(reverse("robert-send"), {

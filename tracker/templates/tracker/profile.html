@@ -52,5 +52,35 @@
             {% empty %}<div class="document-empty">No documents uploaded yet.</div>{% endfor %}
         </div>
     </div>
+    {% if candidate.documents.exists %}
+    <form method="post" class="document-analysis-action">
+        {% csrf_token %}<input type="hidden" name="action" value="analyze_documents">
+        <div><strong>Let Robert read these documents</strong><p>He will temporarily send them to OpenAI, extract supported facts, delete the temporary remote copies, and show you a proposal. Nothing is accepted automatically.</p></div>
+        <button class="button primary" type="submit">Analyze my documents</button>
+    </form>
+    {% endif %}
 </section>
+
+{% if candidate.document_analysis_status == 'ready' %}
+<section class="documents-wide analysis-review">
+    <div class="section-intro"><span class="step-number">!</span><div><h2>Review Robert’s proposal</h2><p>Check every claim. Edit anything that is incomplete or wrong before accepting it.</p></div></div>
+    <div class="analysis-columns">
+        <form method="post" class="proposal-form">
+            {% csrf_token %}<input type="hidden" name="action" value="accept_document_profile">
+            <label for="document-profile-proposal"><strong>Proposed profile</strong></label>
+            <textarea id="document-profile-proposal" name="document_profile_proposal" rows="22" data-dictation="true">{{ candidate.document_profile_proposal }}</textarea>
+            <button class="button primary" type="submit">Accept as my profile</button>
+        </form>
+        <div class="evidence-panel">
+            <h3>Evidence Robert used</h3>
+            {% for item in candidate.document_evidence %}
+            <article><strong>{{ item.claim }}</strong><p>“{{ item.evidence }}”</p><small>{{ item.source }}</small></article>
+            {% empty %}<p>No evidence was returned. Do not accept the proposal until this is resolved.</p>{% endfor %}
+            {% if candidate.document_questions %}<h3>Questions and uncertainties</h3><ul>{% for question in candidate.document_questions %}<li>{{ question }}</li>{% endfor %}</ul>{% endif %}
+        </div>
+    </div>
+</section>
+{% elif candidate.document_analysis_status == 'error' %}
+<div class="message analysis-error">{{ candidate.document_analysis_error }}</div>
+{% endif %}
 {% endblock %}

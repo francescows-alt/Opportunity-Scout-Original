@@ -6,9 +6,10 @@ from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, campaign_reply, is_configured, profile_reply, robert_reply, transcribe
+from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, robert_reply, transcribe
 
 from .forms import (
     CandidateProfileForm,
@@ -216,6 +217,52 @@ def profile(request):
                 ProfileDocument.objects.create(profile=candidate, label=label, file=uploaded_file)
             messages.success(request, f"{len(files)} document(s) uploaded locally.")
             return redirect("profile")
+
+    if request.method == "POST" and request.POST.get("action") == "analyze_documents":
+        documents = list(candidate.documents.all())
+        if not documents:
+            messages.error(request, "Upload at least one profile document before asking Robert to analyze it.")
+            return redirect("profile")
+        try:
+            result = analyze_profile_documents(
+                documents,
+                candidate.profile_draft or candidate.long_description,
+            )
+            candidate.document_profile_proposal = result.proposed_profile
+            candidate.document_evidence = [item.model_dump() for item in result.evidence]
+            candidate.document_questions = result.uncertainties + result.follow_up_questions
+            candidate.document_analysis_status = CandidateProfile.AnalysisStatus.READY
+            candidate.document_analysis_error = ""
+            candidate.document_analyzed_at = timezone.now()
+            candidate.save(update_fields=[
+                "document_profile_proposal", "document_evidence", "document_questions",
+                "document_analysis_status", "document_analysis_error", "document_analyzed_at", "updated_at",
+            ])
+            ChatMessage.objects.create(
+                scope=ChatMessage.Scope.PROFILE,
+                role=ChatMessage.Role.ASSISTANT,
+                content=result.summary + " Review my proposed profile and evidence below. Nothing has been accepted automatically.",
+            )
+            messages.success(request, "Robert finished reading the documents. Review the proposal before accepting it.")
+        except AIUnavailable as error:
+            messages.error(request, str(error))
+        except Exception:
+            candidate.document_analysis_status = CandidateProfile.AnalysisStatus.ERROR
+            candidate.document_analysis_error = "Robert could not analyze the documents. The originals are still safe on this Mac."
+            candidate.save(update_fields=["document_analysis_status", "document_analysis_error", "updated_at"])
+            messages.error(request, candidate.document_analysis_error)
+        return redirect("profile")
+
+    if request.method == "POST" and request.POST.get("action") == "accept_document_profile":
+        proposal = request.POST.get("document_profile_proposal", "").strip()
+        if proposal:
+            candidate.document_profile_proposal = proposal
+            candidate.profile_draft = proposal
+            candidate.save(update_fields=["document_profile_proposal", "profile_draft", "updated_at"])
+            messages.success(request, "The reviewed document profile is now your editable source of truth.")
+        else:
+            messages.error(request, "The proposed profile cannot be empty.")
+        return redirect("profile")
 
     if request.method == "POST" and request.POST.get("action") == "interview_answer":
         answer = request.POST.get("answer", "").strip()

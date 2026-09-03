@@ -63,6 +63,11 @@ class SearchCampaign(models.Model):
 
 
 class CandidateProfile(models.Model):
+    class AnalysisStatus(models.TextChoices):
+        NOT_STARTED = "not_started", "Not analyzed"
+        READY = "ready", "Ready for review"
+        ERROR = "error", "Analysis needs attention"
+
     full_name = models.CharField(max_length=160, blank=True)
     headline = models.CharField(
         max_length=240,
@@ -77,6 +82,16 @@ class CandidateProfile(models.Model):
         blank=True,
         help_text="A live profile draft assembled from the interview. You can edit it freely.",
     )
+    document_analysis_status = models.CharField(
+        max_length=20,
+        choices=AnalysisStatus.choices,
+        default=AnalysisStatus.NOT_STARTED,
+    )
+    document_profile_proposal = models.TextField(blank=True)
+    document_evidence = models.JSONField(default=list, blank=True)
+    document_questions = models.JSONField(default=list, blank=True)
+    document_analysis_error = models.TextField(blank=True)
+    document_analyzed_at = models.DateTimeField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
