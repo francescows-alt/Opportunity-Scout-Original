@@ -56,6 +56,17 @@ def _canonicalize_url(url):
     return urlunsplit(("https", host, path, query, ""))
 
 
+LOGO_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico")
+
+
+def _looks_like_logo_image(url):
+    """Reject bare homepage links; only accept URLs that point at an actual image file."""
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    return parsed.path.lower().endswith(LOGO_IMAGE_EXTENSIONS)
+
+
 def _normalized_words(value):
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode().lower()
     return " ".join(re.findall(r"[a-z0-9]+", value))
@@ -437,8 +448,7 @@ def qualify_discoveries(request):
             if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
                 opportunity.organization.website = website
             logo_url = report.company_logo_url.strip()
-            parsed_logo = urlparse(logo_url)
-            if parsed_logo.scheme in {"http", "https"} and parsed_logo.netloc:
+            if _looks_like_logo_image(logo_url):
                 opportunity.organization.logo_url = logo_url
             if report.company_location.strip():
                 opportunity.organization.location = report.company_location.strip()

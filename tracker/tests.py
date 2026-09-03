@@ -315,6 +315,46 @@ class DashboardTests(TestCase):
         page_html = report.content.decode()
         self.assertLess(page_html.index("back-to-list"), page_html.index("Other opportunities"))
 
+    @patch("tracker.views.qualify_opportunities")
+    def test_qualification_rejects_non_image_logo_urls(self, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Homepage Only Co")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            source_url="https://example.com/jobs/growth-intern", match_score=70,
+        )
+        qualify.return_value = OpportunityResearchBatch(
+            summary="Checked the logo link.",
+            reports=[{
+                "opportunity_id": opportunity.id, "verdict": "clarify",
+                "company_description": "A company.", "company_location": "Tokyo, Japan",
+                "company_size": "11–50 employees", "company_country": "Japan",
+                "company_industry": "SaaS", "company_website": "https://example.com/",
+                "internship_location": "Tokyo, Japan",
+                "company_logo_url": "https://example.com/",
+                "company_reputation": "Not established by reliable public sources.",
+                "cv_value": "Some relevant evidence.", "international_environment": "Not established.",
+                "growth_outlook": "Not established.", "work_culture": "Not established.",
+                "internship_dates": "Not stated", "internship_start_date_iso": None,
+                "internship_end_date_iso": None, "minimum_duration": "Not stated",
+                "work_arrangement": "Not stated", "application_deadline": "Not stated",
+                "application_deadline_iso": None, "japanese_requirement": "Not stated",
+                "posting_language": "English", "posting_language_note": "Written in English.",
+                "japanese_only_inferred": False, "visa_support": "Not stated",
+                "thesis_compatibility": "Requires confirmation",
+                "role_summary": "Supports growth work.", "match_score": 60,
+                "responsibilities": ["Support campaigns"],
+                "what_you_would_do": "Support marketing campaigns day to day for the team.",
+                "what_company_needs": "A student available for the internship period.",
+                "candidate_fee_required": False, "candidate_fee": "None found",
+                "compensation": "Not stated", "fit_summary": "Reasonable functional fit.",
+                "requirements": [], "sources": [], "next_action": "Confirm visa support.",
+            }],
+        )
+        self.client.post(reverse("qualify-discoveries"))
+        organization.refresh_from_db()
+        self.assertEqual(organization.logo_url, "")
+
     def test_list_shows_company_research_and_expired_label(self):
         organization = Organization.objects.create(
             name="Archived Fintech", logo_url="https://example.com/logo.png",
