@@ -2,11 +2,13 @@ from django.contrib import admin
 
 from .models import (
     CandidateProfile,
+    CampaignAttachment,
     InboxAttachment,
     InboxItem,
     Opportunity,
     Organization,
     ProfileDocument,
+    ProfileInterviewAnswer,
     SearchCampaign,
 )
 
@@ -24,3 +26,5 @@ admin.site.register(Organization)
 admin.site.register(Opportunity)
 admin.site.register(InboxItem)
 admin.site.register(InboxAttachment)
+admin.site.register(ProfileInterviewAnswer)
+admin.site.register(CampaignAttachment)

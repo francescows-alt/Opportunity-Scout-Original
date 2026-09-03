@@ -1,0 +1,25 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}New campaign · Internship OS{% endblock %}
+{% block content %}
+<section class="dashboard-heading">
+    <div><a class="back-link" href="{% url 'campaign-list' %}">← Back to search rules</a><p class="eyebrow">AI-guided setup</p><h1>What should we search for?</h1><p class="lede">Describe it naturally. You do not need to understand every requirement today.</p></div>
+</section>
+
+<section class="inbox-composer campaign-composer">
+    <div class="ai-state"><span>AI</span><div><strong>Campaign interpretation will be connected next</strong><p>For now, your complete request and files are saved without pretending they were analyzed.</p></div></div>
+    <form method="post" enctype="multipart/form-data" class="quick-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        {% include "tracker/field.html" with field=form.name %}
+        <div class="prompt-box">{{ form.description }}</div>
+        {% for error in form.description.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+        <label class="attachment-button campaign-attachment">▧ Add supporting documents or screenshots {{ form.files }}</label>
+        {% for error in form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+        <div class="quick-actions">
+            <a class="advanced-link" href="{% url 'campaign-create-advanced' %}">Advanced manual correction</a>
+            <button class="button primary" type="submit">Save campaign request</button>
+        </div>
+    </form>
+</section>
+{% endblock %}

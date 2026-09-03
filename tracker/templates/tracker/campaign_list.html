@@ -15,11 +15,11 @@
     {% for campaign in campaigns %}
     <article class="campaign-card">
         <div class="card-topline">
-            <span class="status{% if campaign.is_active %} active{% endif %}">{% if campaign.is_active %}Active{% else %}Paused{% endif %}</span>
+            <span class="status{% if campaign.is_active %} active{% endif %}">{% if campaign.setup_status == 'waiting_ai' %}Waiting for AI setup{% elif campaign.is_active %}Active{% else %}Paused{% endif %}</span>
             <span class="updated">Updated {{ campaign.updated_at|date:"j M Y" }}</span>
         </div>
         <h2>{{ campaign.name }}</h2>
-        <p class="goal">{{ campaign.goal }}</p>
+        <p class="goal">{% if campaign.setup_status == 'waiting_ai' %}{{ campaign.natural_language_brief|truncatewords:24 }}{% else %}{{ campaign.goal }}{% endif %}</p>
         <dl>
             <div><dt>Where</dt><dd>{{ campaign.locations|default:"Open" }}</dd></div>
             <div>

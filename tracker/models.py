@@ -39,6 +39,15 @@ class SearchCampaign(models.Model):
         help_text="Rules to verify with your university. These can be changed later.",
     )
     notes = models.TextField(blank=True)
+    natural_language_brief = models.TextField(
+        blank=True,
+        help_text="The original request used to create or update this campaign.",
+    )
+    setup_status = models.CharField(
+        max_length=24,
+        choices=[("ready", "Ready"), ("waiting_ai", "Waiting for AI setup")],
+        default="ready",
+    )
     is_active = models.BooleanField(
         default=True,
         help_text="Active campaigns appear first on the dashboard.",
@@ -64,10 +73,42 @@ class CandidateProfile(models.Model):
         blank=True,
         help_text="Describe your background, interests, goals, constraints, and anything the assistant should understand.",
     )
+    profile_draft = models.TextField(
+        blank=True,
+        help_text="A live profile draft assembled from the interview. You can edit it freely.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.full_name or "My profile"
+
+
+class ProfileInterviewAnswer(models.Model):
+    profile = models.ForeignKey(CandidateProfile, on_delete=models.CASCADE, related_name="interview_answers")
+    question_key = models.CharField(max_length=80)
+    question = models.TextField()
+    section_title = models.CharField(max_length=120)
+    answer = models.TextField()
+    position = models.PositiveSmallIntegerField()
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["position"]
+        constraints = [
+            models.UniqueConstraint(fields=["profile", "question_key"], name="unique_profile_question")
+        ]
+
+    def __str__(self):
+        return self.section_title
+
+
+class CampaignAttachment(models.Model):
+    campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="campaign_requests/%Y/%m/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.file.name
 
 
 class ProfileDocument(models.Model):

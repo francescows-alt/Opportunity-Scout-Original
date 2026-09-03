@@ -1,4 +1,3 @@
-from datetime import date
 from tempfile import TemporaryDirectory
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -15,21 +14,16 @@ class SearchCampaignTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Your search campaigns")
 
-    def test_user_can_create_campaign(self):
+    def test_user_can_create_campaign_from_plain_language(self):
         response = self.client.post(reverse("campaign-create"), {
             "name": "Japan graduation internship 2027",
-            "goal": "Graduation internship",
-            "locations": "Japan, especially Tokyo",
-            "start_date": "2027-02-01",
-            "end_date": "2027-06-30",
-            "desired_work": "Meaningful and varied business work",
-            "avoid_work": "Reception and repetitive administration",
-            "is_active": "on",
+            "description": "Find a February to June thesis internship in Japan with visa support.",
         })
         self.assertRedirects(response, reverse("campaign-list"))
         campaign = SearchCampaign.objects.get()
         self.assertEqual(campaign.name, "Japan graduation internship 2027")
-        self.assertEqual(campaign.start_date, date(2027, 2, 1))
+        self.assertEqual(campaign.setup_status, "waiting_ai")
+        self.assertIn("visa support", campaign.natural_language_brief)
 
     def test_user_can_edit_campaign(self):
         campaign = SearchCampaign.objects.create(name="Original search", goal="Internship")
@@ -42,7 +36,7 @@ class SearchCampaignTests(TestCase):
         self.assertEqual(campaign.goal, "Graduate job")
 
     def test_end_date_cannot_be_before_start_date(self):
-        response = self.client.post(reverse("campaign-create"), {
+        response = self.client.post(reverse("campaign-create-advanced"), {
             "name": "Invalid dates", "goal": "Internship",
             "start_date": "2027-06-01", "end_date": "2027-02-01",
         })
@@ -96,9 +90,9 @@ class DashboardTests(TestCase):
 
 
 class CandidateProfileTests(TestCase):
-    def test_home_starts_at_profile(self):
+    def test_home_starts_at_applications(self):
         response = self.client.get(reverse("home"))
-        self.assertRedirects(response, reverse("profile"))
+        self.assertRedirects(response, reverse("dashboard"))
 
     def test_user_can_save_long_description(self):
         response = self.client.post(reverse("profile"), {
@@ -120,6 +114,18 @@ class CandidateProfileTests(TestCase):
             })
             self.assertRedirects(response, reverse("profile"))
             self.assertTrue(ProfileDocument.objects.get().label.startswith("Current CV"))
+
+    def test_interview_answer_updates_live_profile(self):
+        self.client.get(reverse("profile"))
+        response = self.client.post(reverse("profile"), {
+            "action": "interview_answer",
+            "question_key": "education",
+            "answer": "I study International Business at Rotterdam Business School.",
+        })
+        self.assertRedirects(response, reverse("profile"))
+        profile = CandidateProfile.objects.get(pk=1)
+        self.assertIn("International Business", profile.profile_draft)
+        self.assertEqual(profile.interview_answers.count(), 1)
 
 
 class InboxTests(TestCase):

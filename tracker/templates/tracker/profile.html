@@ -2,31 +2,49 @@
 
 {% block title %}My profile · Internship OS{% endblock %}
 {% block content %}
-<section class="profile-heading"><div><p class="eyebrow">Start here</p><h1>Build my profile</h1><p class="lede">Drop in what already exists, then describe yourself in your own words. This becomes the evidence base for future searches and applications.</p></div></section>
+<section class="profile-heading">
+    <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">Answer naturally. The interview builds a live draft you can correct at any time.</p></div>
+    <span class="waiting-badge">{{ answered_count }} / {{ question_count }} answered</span>
+</section>
 
-<div class="profile-layout">
-    <form method="post" class="form-section profile-description">
+<div class="profile-workspace">
+    <section class="chat-panel">
+        <div class="panel-heading"><div><span class="ai-avatar">AI</span><div><h2>Profile interview</h2><p>Guided mode · adaptive AI comes next</p></div></div></div>
+        <div class="chat-messages">
+            {% for message in conversation %}
+                <div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}AI{% else %}You{% endif %}</span><p>{{ message.text|linebreaksbr }}</p></div>
+            {% endfor %}
+            {% if not current_question %}<div class="chat-message assistant"><span>AI</span><p>We have covered the first profile interview. Review and adjust your profile draft on the right.</p></div>{% endif %}
+        </div>
+        {% if current_question %}
+        <form method="post" class="chat-composer">
+            {% csrf_token %}<input type="hidden" name="action" value="interview_answer"><input type="hidden" name="question_key" value="{{ current_question.key }}">
+            <textarea name="answer" rows="5" data-dictation="true" placeholder="Type or dictate your answer…" required></textarea>
+            <div class="chat-actions"><small>Use the microphone to dictate. You still choose when to send.</small><button class="button primary" type="submit">Send answer</button></div>
+        </form>
+        {% endif %}
+    </section>
+
+    <form method="post" class="form-section live-profile-panel">
         {% csrf_token %}<input type="hidden" name="action" value="save_profile">
-        <div class="section-intro"><span class="step-number">2</span><div><h2>Tell the assistant about you</h2><p>Write naturally. A long, messy description is fine. AI extraction will be added next and every extracted fact will require your confirmation.</p></div></div>
+        <div class="section-intro"><span class="step-number">✓</span><div><h2>Live profile</h2><p>Interview answers appear here as editable notes. Real AI rewriting and fact verification come next.</p></div></div>
         <div class="field-grid">
             {% include "tracker/field.html" with field=profile_form.full_name %}
             {% include "tracker/field.html" with field=profile_form.headline %}
+            {% include "tracker/field.html" with field=profile_form.profile_draft %}
             {% include "tracker/field.html" with field=profile_form.long_description %}
         </div>
-        <div class="form-actions"><button class="button primary" type="submit">Save my description</button></div>
+        <div class="form-actions"><button class="button primary" type="submit">Save my edits</button></div>
     </form>
+</div>
 
-    <aside class="documents-panel">
-        <div class="section-intro"><span class="step-number">1</span><div><h2>Drop in your documents</h2><p>CVs, transcripts, certificates, images, and university files. Select several files at once.</p></div></div>
+<section class="documents-wide">
+    <div class="section-intro"><span class="step-number">＋</span><div><h2>Profile documents</h2><p>Upload CVs, transcripts, certificates, images, and university files. They stay on this Mac.</p></div></div>
+    <div class="documents-grid">
         <form method="post" enctype="multipart/form-data" class="upload-form">
             {% csrf_token %}<input type="hidden" name="action" value="upload_document">
             {% include "tracker/field.html" with field=document_form.label %}
-            <label class="drop-zone">
-                <span class="drop-icon">⇧</span>
-                <strong>Choose files</strong>
-                <small>or drag them onto this box</small>
-                {{ document_form.files }}
-            </label>
+            <label class="drop-zone"><span class="drop-icon">⇧</span><strong>Choose or drop files</strong><small>Select several files at once</small>{{ document_form.files }}</label>
             {% for error in document_form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
             <button class="button primary" type="submit">Add to my profile</button>
             <p class="privacy-note">PDF, Word, text, PNG, JPG, or WEBP · 10 MB each · local only</p>
@@ -34,11 +52,8 @@
         <div class="document-list">
             {% for document in candidate.documents.all %}
                 <a href="{{ document.file.url }}" target="_blank"><strong>{{ document.label }}</strong><small>{{ document.file.name|cut:"profile_documents/" }} · {{ document.uploaded_at|date:"j M Y" }}</small></a>
-            {% empty %}
-                <div class="document-empty">No documents uploaded yet.</div>
-            {% endfor %}
+            {% empty %}<div class="document-empty">No documents uploaded yet.</div>{% endfor %}
         </div>
-        <a class="button secondary continue-button" href="{% url 'inbox' %}">Continue to job inbox →</a>
-    </aside>
-</div>
+    </div>
+</section>
 {% endblock %}
