@@ -12,6 +12,9 @@ urlpatterns = [
     path("profile/", views.profile, name="profile"),
     path("search-rules/", views.campaign_list, name="campaign-list"),
     path("campaigns/new/", views.campaign_create, name="campaign-create"),
+    path("campaigns/<int:campaign_id>/setup/", views.campaign_setup, name="campaign-setup"),
     path("campaigns/new/advanced/", views.campaign_create_advanced, name="campaign-create-advanced"),
     path("campaigns/<int:campaign_id>/edit/", views.campaign_edit, name="campaign-edit"),
+    path("robert/send/", views.robert_send, name="robert-send"),
+    path("api/transcribe/", views.transcribe_audio, name="transcribe-audio"),
 ]

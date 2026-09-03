@@ -190,8 +190,27 @@ dd { margin: 0; }
 .mic-button:hover { border-color: var(--green); color: var(--green); }
 .mic-button.listening { border-color: #d84c4c; background: #fff0f0; color: #b82929; }
 .mic-button.listening span { animation: pulse 1s infinite; }
+.mic-button.processing { border-color: var(--green); background: var(--mint); color: var(--green-dark); }
 .mic-button.unsupported { opacity: 0.6; }
 @keyframes pulse { 50% { opacity: 0.35; } }
+.campaign-preview { margin: 0; }
+.campaign-preview dl div { grid-template-columns: 5rem 1fr; border-bottom: 1px solid var(--line); padding: 0.75rem 0; }
+.robert-launcher { position: fixed; right: 1.4rem; bottom: 1.4rem; z-index: 30; display: flex; align-items: center; gap: 0.55rem; border: 0; border-radius: 999px; background: #202944; padding: 0.65rem 0.95rem 0.65rem 0.65rem; color: white; font: inherit; font-weight: 750; cursor: pointer; box-shadow: 0 12px 30px rgba(24, 35, 55, 0.28); }
+.robert-face { display: grid; width: 2rem; height: 2rem; place-items: center; border-radius: 50%; background: var(--green); color: white; font-weight: 850; }
+.robert-panel { position: fixed; right: 1.4rem; bottom: 5.4rem; z-index: 40; display: none; width: min(410px, calc(100vw - 2rem)); overflow: hidden; border: 1px solid var(--line); border-radius: 1.1rem; background: white; box-shadow: 0 24px 70px rgba(24, 35, 55, 0.25); }
+.robert-panel.open { display: block; }
+.robert-heading { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 0.85rem; }
+.robert-heading > div { display: flex; align-items: center; gap: 0.65rem; }
+.robert-heading strong, .robert-heading small { display: block; }
+.robert-heading small { color: var(--muted); font-size: 0.72rem; }
+.robert-close { border: 0; background: transparent; color: var(--muted); font-size: 1.65rem; cursor: pointer; }
+.robert-body { display: flex; max-height: 22rem; min-height: 11rem; flex-direction: column; gap: 0.75rem; overflow-y: auto; background: #fafbfe; padding: 0.85rem; }
+.robert-body .chat-message { font-size: 0.88rem; }
+.robert-composer { border-top: 1px solid var(--line); padding: 0.75rem; }
+.robert-composer textarea { width: 100%; resize: vertical; border: 1px solid #cdd2dc; border-radius: 0.75rem; padding: 0.75rem 0.75rem 3rem; font: inherit; }
+.robert-composer > div { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.5rem; }
+.robert-composer small { color: var(--muted); font-size: 0.7rem; }
+.robert-composer .button { min-height: 2.45rem; padding: 0.5rem 0.8rem; }
 
 @media (max-width: 720px) {
     .hero, .form-heading { align-items: stretch; flex-direction: column; }
@@ -213,4 +232,6 @@ dd { margin: 0; }
     .quick-top-row, .quick-source { grid-template-columns: 1fr; }
     .quick-actions { align-items: stretch; flex-direction: column-reverse; }
     .inbox-item { grid-template-columns: 1fr; }
+    .robert-launcher { right: 0.8rem; bottom: 0.8rem; }
+    .robert-panel { right: 0.6rem; bottom: 5rem; width: calc(100vw - 1.2rem); }
 }

@@ -33,13 +33,30 @@ The application runs only while that terminal command is active. Press
 - Search and filter applications, with pagination for large lists
 - Track match score, status, next action, deadlines, and CV submission date
 - Save a long personal description
-- Complete a guided profile interview that builds an editable live draft
+- Talk with Robert in a profile interview that maintains an editable live draft
 - Upload several profile documents locally in one step
 - Quickly capture pasted vacancies, company ideas, links, screenshots, and PDFs
 - Hold new inputs in a job inbox until truthful AI analysis is connected
-- Create campaign requests from one natural-language description
-- Dictate into important text areas using the browser microphone button
+- Build campaigns conversationally with Robert, then edit every setting manually
+- Ask Robert for hiring advice from anywhere in the app
+- Record reliable dictation and transcribe it into important text areas
 - Keep local personal data out of Git
 
-The application does not yet search the web, call paid APIs, send messages, or
-submit applications.
+The application does not yet run automatic web searches, process the job inbox,
+send messages, or submit applications.
+
+## One-time AI setup
+
+Robert and dictation use the OpenAI API. API billing is separate from a ChatGPT
+or Codex subscription, although you can sign in with the same OpenAI account.
+
+1. Add $5 of prepaid API credit at <https://platform.openai.com/settings/organization/billing/overview>.
+2. Turn automatic recharge off if you want the simplest spending protection.
+3. Create a secret key at <https://platform.openai.com/api-keys>.
+4. In the project terminal, run `cp .env.example .env`.
+5. Open `.env`, replace `your-key-goes-here` with the secret key, and save it.
+6. Stop and restart the local server.
+
+Never paste the secret key into chat. The real `.env` is ignored by Git. The app
+also pauses its own AI calls when its estimated monthly usage reaches $5; this is
+a second safety guard, not a substitute for checking the OpenAI billing page.

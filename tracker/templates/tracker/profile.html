@@ -4,30 +4,27 @@
 {% block content %}
 <section class="profile-heading">
     <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">Answer naturally. The interview builds a live draft you can correct at any time.</p></div>
-    <span class="waiting-badge">{{ answered_count }} / {{ question_count }} answered</span>
+    <span class="waiting-badge">{% if ai_configured %}Robert connected{% else %}AI setup needed{% endif %}</span>
 </section>
 
 <div class="profile-workspace">
     <section class="chat-panel">
-        <div class="panel-heading"><div><span class="ai-avatar">AI</span><div><h2>Profile interview</h2><p>Guided mode · adaptive AI comes next</p></div></div></div>
+        <div class="panel-heading"><div><span class="ai-avatar">R</span><div><h2>Profile interview with Robert</h2><p>He asks follow-ups and updates the editable profile</p></div></div></div>
         <div class="chat-messages">
             {% for message in conversation %}
-                <div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}AI{% else %}You{% endif %}</span><p>{{ message.text|linebreaksbr }}</p></div>
+                <div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}R{% else %}You{% endif %}</span><p>{{ message.content|linebreaksbr }}</p></div>
             {% endfor %}
-            {% if not current_question %}<div class="chat-message assistant"><span>AI</span><p>We have covered the first profile interview. Review and adjust your profile draft on the right.</p></div>{% endif %}
         </div>
-        {% if current_question %}
         <form method="post" class="chat-composer">
-            {% csrf_token %}<input type="hidden" name="action" value="interview_answer"><input type="hidden" name="question_key" value="{{ current_question.key }}">
+            {% csrf_token %}<input type="hidden" name="action" value="interview_answer">
             <textarea name="answer" rows="5" data-dictation="true" placeholder="Type or dictate your answer…" required></textarea>
             <div class="chat-actions"><small>Use the microphone to dictate. You still choose when to send.</small><button class="button primary" type="submit">Send answer</button></div>
         </form>
-        {% endif %}
     </section>
 
     <form method="post" class="form-section live-profile-panel">
         {% csrf_token %}<input type="hidden" name="action" value="save_profile">
-        <div class="section-intro"><span class="step-number">✓</span><div><h2>Live profile</h2><p>Interview answers appear here as editable notes. Real AI rewriting and fact verification come next.</p></div></div>
+        <div class="section-intro"><span class="step-number">✓</span><div><h2>Live profile</h2><p>Robert maintains this from your answers. You remain in control and can correct every word.</p></div></div>
         <div class="field-grid">
             {% include "tracker/field.html" with field=profile_form.full_name %}
             {% include "tracker/field.html" with field=profile_form.headline %}

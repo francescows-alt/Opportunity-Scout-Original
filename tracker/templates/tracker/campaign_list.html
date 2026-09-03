@@ -28,6 +28,7 @@
             </div>
         </dl>
         {% if campaign.desired_work %}<p class="summary">{{ campaign.desired_work|truncatewords:28 }}</p>{% endif %}
+        {% if campaign.setup_status == 'waiting_ai' %}<a class="button primary" href="{% url 'campaign-setup' campaign.id %}">Continue with Robert</a>{% endif %}
         <a class="button secondary" href="{% url 'campaign-edit' campaign.id %}">Edit settings</a>
     </article>
     {% endfor %}

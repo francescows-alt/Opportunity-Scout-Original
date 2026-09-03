@@ -211,3 +211,40 @@ class InboxAttachment(models.Model):
 
     def __str__(self):
         return self.file.name
+
+
+class ChatMessage(models.Model):
+    """A local record of conversations with Robert."""
+
+    class Scope(models.TextChoices):
+        GENERAL = "general", "Robert"
+        PROFILE = "profile", "Profile interview"
+        CAMPAIGN = "campaign", "Campaign setup"
+
+    class Role(models.TextChoices):
+        USER = "user", "You"
+        ASSISTANT = "assistant", "Robert"
+
+    scope = models.CharField(max_length=16, choices=Scope.choices, default=Scope.GENERAL, db_index=True)
+    role = models.CharField(max_length=16, choices=Role.choices)
+    content = models.TextField()
+    campaign = models.ForeignKey(
+        SearchCampaign,
+        on_delete=models.CASCADE,
+        related_name="chat_messages",
+        blank=True,
+        null=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class AIUsage(models.Model):
+    purpose = models.CharField(max_length=32)
+    estimated_cost_usd = models.DecimalField(max_digits=10, decimal_places=6)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]

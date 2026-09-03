@@ -1,0 +1,34 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}Campaign conversation · Internship OS{% endblock %}
+{% block content %}
+<section class="profile-heading">
+    <div><a class="back-link" href="{% url 'campaign-list' %}">← Back to search rules</a><p class="eyebrow">Campaign conversation</p><h1>{{ campaign.name }}</h1><p class="lede">Talk naturally. Robert turns the conversation into editable rules without making soft preferences too strict.</p></div>
+    <span class="waiting-badge">{% if campaign.setup_status == 'ready' %}Settings ready{% elif ai_configured %}Interviewing{% else %}AI setup needed{% endif %}</span>
+</section>
+
+<div class="profile-workspace campaign-workspace">
+    <section class="chat-panel">
+        <div class="panel-heading"><div><span class="ai-avatar">R</span><div><h2>Build this search with Robert</h2><p>One useful question at a time</p></div></div></div>
+        <div class="chat-messages">
+            {% for message in conversation %}<div class="chat-message {{ message.role }}"><span>{% if message.role == 'assistant' %}R{% else %}You{% endif %}</span><p>{{ message.content|linebreaksbr }}</p></div>{% endfor %}
+        </div>
+        <form method="post" class="chat-composer">
+            {% csrf_token %}<textarea name="message" rows="5" data-dictation="true" placeholder="Answer Robert or add another preference…" required></textarea>
+            <div class="chat-actions"><small>Speak or type; you can edit the final settings.</small><button class="button primary" type="submit">Send</button></div>
+        </form>
+    </section>
+    <section class="form-section campaign-preview">
+        <div class="section-intro"><span class="step-number">✓</span><div><h2>Current editable result</h2><p>This updates as the conversation becomes clearer.</p></div></div>
+        <dl>
+            <div><dt>Goal</dt><dd>{{ campaign.goal }}</dd></div>
+            <div><dt>Where</dt><dd>{{ campaign.locations|default:"Not decided" }}</dd></div>
+            <div><dt>When</dt><dd>{{ campaign.start_date|default:"Open" }} — {{ campaign.end_date|default:"Open" }}</dd></div>
+            <div><dt>Work</dt><dd>{{ campaign.desired_work|default:"Still discussing"|linebreaksbr }}</dd></div>
+            <div><dt>Avoid</dt><dd>{{ campaign.avoid_work|default:"Still discussing"|linebreaksbr }}</dd></div>
+            <div><dt>Style</dt><dd>{{ campaign.work_style|default:"Still discussing"|linebreaksbr }}</dd></div>
+        </dl>
+        <a class="button secondary continue-button" href="{% url 'campaign-edit' campaign.id %}">Open all manual settings</a>
+    </section>
+</div>
+{% endblock %}

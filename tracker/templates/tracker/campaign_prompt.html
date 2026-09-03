@@ -7,7 +7,7 @@
 </section>
 
 <section class="inbox-composer campaign-composer">
-    <div class="ai-state"><span>AI</span><div><strong>Campaign interpretation will be connected next</strong><p>For now, your complete request and files are saved without pretending they were analyzed.</p></div></div>
+    <div class="ai-state"><span>R</span><div><strong>Start a conversation with Robert</strong><p>Give him the rough idea. He will ask about the important gaps, then prepare settings you can edit manually.</p></div></div>
     <form method="post" enctype="multipart/form-data" class="quick-form">
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -18,7 +18,7 @@
         {% for error in form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
         <div class="quick-actions">
             <a class="advanced-link" href="{% url 'campaign-create-advanced' %}">Advanced manual correction</a>
-            <button class="button primary" type="submit">Save campaign request</button>
+            <button class="button primary" type="submit">Start campaign chat</button>
         </div>
     </form>
 </section>

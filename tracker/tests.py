@@ -5,7 +5,7 @@ from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
-from .models import CandidateProfile, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
 
 
 class SearchCampaignTests(TestCase):
@@ -19,8 +19,8 @@ class SearchCampaignTests(TestCase):
             "name": "Japan graduation internship 2027",
             "description": "Find a February to June thesis internship in Japan with visa support.",
         })
-        self.assertRedirects(response, reverse("campaign-list"))
         campaign = SearchCampaign.objects.get()
+        self.assertRedirects(response, reverse("campaign-setup", args=[campaign.id]))
         self.assertEqual(campaign.name, "Japan graduation internship 2027")
         self.assertEqual(campaign.setup_status, "waiting_ai")
         self.assertIn("visa support", campaign.natural_language_brief)
@@ -125,7 +125,30 @@ class CandidateProfileTests(TestCase):
         self.assertRedirects(response, reverse("profile"))
         profile = CandidateProfile.objects.get(pk=1)
         self.assertIn("International Business", profile.profile_draft)
-        self.assertEqual(profile.interview_answers.count(), 1)
+        self.assertEqual(ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE).count(), 3)
+
+    def test_profile_starts_with_robert_question(self):
+        response = self.client.get(reverse("profile"))
+        self.assertContains(response, "What are you studying")
+        self.assertEqual(ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE).count(), 1)
+
+
+class RobertTests(TestCase):
+    def test_question_is_saved_and_missing_setup_is_explained(self):
+        response = self.client.post(reverse("robert-send"), {
+            "message": "What should I do next?",
+            "next": reverse("dashboard"),
+        })
+        self.assertRedirects(response, reverse("dashboard") + "?robert=open")
+        messages = ChatMessage.objects.filter(scope=ChatMessage.Scope.GENERAL)
+        self.assertEqual(messages.count(), 2)
+        self.assertIn("not connected", messages.last().content)
+
+    def test_transcription_explains_missing_ai_setup(self):
+        recording = SimpleUploadedFile("dictation.webm", b"audio", content_type="audio/webm")
+        response = self.client.post(reverse("transcribe-audio"), {"audio": recording})
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("not connected", response.json()["error"])
 
 
 class InboxTests(TestCase):

@@ -3,7 +3,12 @@ from pathlib import Path
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.views.decorators.http import require_POST
+
+from .ai import AIUnavailable, campaign_reply, is_configured, profile_reply, robert_reply, transcribe
 
 from .forms import (
     CandidateProfileForm,
@@ -13,18 +18,7 @@ from .forms import (
     QuickInboxForm,
     SearchCampaignForm,
 )
-from .models import CandidateProfile, InboxItem, Opportunity, ProfileDocument, ProfileInterviewAnswer, SearchCampaign
-
-
-PROFILE_QUESTIONS = [
-    ("education", "Education", "What are you studying, where are you studying, and when do you expect to graduate?"),
-    ("experience", "Experience", "Tell me about jobs, internships, volunteering, university projects, or businesses you have worked on."),
-    ("achievements", "Achievements", "What results or achievements are you proud of? Numbers and concrete examples are especially useful."),
-    ("skills", "Skills and languages", "Which tools, business skills, technical skills, and languages can you genuinely use?"),
-    ("motivation", "Motivation", "What kind of work makes you curious or energized, and what work would you rather avoid?"),
-    ("constraints", "Practical constraints", "What dates, locations, visa needs, university rules, working hours, or other limits matter?"),
-    ("story", "Personal story", "What else should a company understand about you that may not appear on your CV?"),
-]
+from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, ProfileDocument, SearchCampaign
 
 
 def home(request):
@@ -79,10 +73,77 @@ def campaign_create(request):
     form = CampaignPromptForm(request.POST or None, request.FILES or None)
     if request.method == "POST" and form.is_valid():
         campaign = form.save()
-        messages.success(request, f'Campaign request "{campaign.name}" was saved for AI setup.')
-        return redirect("campaign-list")
+        user_text = form.cleaned_data["description"].strip()
+        if is_configured():
+            try:
+                turn = campaign_reply(campaign, user_text)
+                _apply_campaign_turn(campaign, turn)
+                assistant_text = turn.reply
+            except Exception:
+                assistant_text = "I saved that safely, but I could not reach the AI service. Try Send again in a moment."
+        else:
+            assistant_text = "I saved your starting idea. Connect OpenAI once, then I can ask focused follow-up questions and build the editable settings with you."
+        ChatMessage.objects.create(
+            scope=ChatMessage.Scope.CAMPAIGN, role=ChatMessage.Role.USER,
+            campaign=campaign, content=user_text,
+        )
+        ChatMessage.objects.create(
+            scope=ChatMessage.Scope.CAMPAIGN, role=ChatMessage.Role.ASSISTANT,
+            campaign=campaign, content=assistant_text,
+        )
+        return redirect("campaign-setup", campaign_id=campaign.id)
     return render(request, "tracker/campaign_prompt.html", {
         "form": form, "page_title": "Create a search campaign",
+    })
+
+
+def _apply_campaign_turn(campaign, turn):
+    editable_fields = [
+        "name", "goal", "locations", "start_date", "end_date", "desired_work",
+        "avoid_work", "work_style", "company_preferences", "language_requirements",
+        "visa_requirements", "university_requirements", "notes",
+    ]
+    changed = []
+    for field in editable_fields:
+        value = getattr(turn, field, None)
+        if value is not None:
+            setattr(campaign, field, value)
+            changed.append(field)
+    if turn.ready:
+        campaign.setup_status = "ready"
+        campaign.is_active = True
+        changed.extend(["setup_status", "is_active"])
+    if changed:
+        campaign.save(update_fields=list(dict.fromkeys(changed)) + ["updated_at"])
+
+
+def campaign_setup(request, campaign_id):
+    campaign = get_object_or_404(SearchCampaign, id=campaign_id)
+    if request.method == "POST":
+        user_text = request.POST.get("message", "").strip()
+        if user_text:
+            try:
+                turn = campaign_reply(campaign, user_text)
+                assistant_text = turn.reply
+                _apply_campaign_turn(campaign, turn)
+            except AIUnavailable as error:
+                assistant_text = str(error)
+            except Exception:
+                assistant_text = "Something interrupted that answer. Your message is saved; please try again."
+            ChatMessage.objects.create(
+                scope=ChatMessage.Scope.CAMPAIGN, role=ChatMessage.Role.USER,
+                campaign=campaign, content=user_text,
+            )
+            ChatMessage.objects.create(
+                scope=ChatMessage.Scope.CAMPAIGN, role=ChatMessage.Role.ASSISTANT,
+                campaign=campaign, content=assistant_text,
+            )
+            return redirect("campaign-setup", campaign_id=campaign.id)
+        messages.error(request, "Type or dictate a message first.")
+    return render(request, "tracker/campaign_setup.html", {
+        "campaign": campaign,
+        "conversation": campaign.chat_messages.all(),
+        "ai_configured": is_configured(),
     })
 
 
@@ -157,49 +218,42 @@ def profile(request):
             return redirect("profile")
 
     if request.method == "POST" and request.POST.get("action") == "interview_answer":
-        question_key = request.POST.get("question_key", "")
         answer = request.POST.get("answer", "").strip()
-        question_data = next((item for item in PROFILE_QUESTIONS if item[0] == question_key), None)
-        if question_data and answer:
-            position = next(index for index, item in enumerate(PROFILE_QUESTIONS) if item[0] == question_key)
-            _, section_title, question = question_data
-            _, created = ProfileInterviewAnswer.objects.update_or_create(
-                profile=candidate,
-                question_key=question_key,
-                defaults={
-                    "question": question,
-                    "section_title": section_title,
-                    "answer": answer,
-                    "position": position,
-                },
-            )
-            if created:
+        if answer:
+            current_profile = candidate.profile_draft or candidate.long_description
+            try:
+                turn = profile_reply(answer, current_profile)
+                assistant_text = turn.reply
+                candidate.profile_draft = turn.revised_profile
+            except AIUnavailable as error:
+                assistant_text = str(error) + " Your answer was still added to the editable profile."
                 prefix = f"{candidate.profile_draft.rstrip()}\n\n" if candidate.profile_draft.strip() else ""
-                candidate.profile_draft = f"{prefix}{section_title}\n{answer}"
-                candidate.save(update_fields=["profile_draft", "updated_at"])
-            messages.success(request, "Answer saved and added to your live profile draft.")
+                candidate.profile_draft = f"{prefix}Interview note\n{answer}"
+            except Exception:
+                assistant_text = "I saved your answer, but the AI response was interrupted. Please try another message."
+                prefix = f"{candidate.profile_draft.rstrip()}\n\n" if candidate.profile_draft.strip() else ""
+                candidate.profile_draft = f"{prefix}Interview note\n{answer}"
+            candidate.save(update_fields=["profile_draft", "updated_at"])
+            ChatMessage.objects.create(scope=ChatMessage.Scope.PROFILE, role=ChatMessage.Role.USER, content=answer)
+            ChatMessage.objects.create(scope=ChatMessage.Scope.PROFILE, role=ChatMessage.Role.ASSISTANT, content=assistant_text)
+            messages.success(request, "Your answer was saved and the live profile was updated.")
             return redirect("profile")
         messages.error(request, "Please answer the interview question before sending.")
 
-    answers = {answer.question_key: answer for answer in candidate.interview_answers.all()}
-    conversation = []
-    current_question = None
-    for key, section_title, question in PROFILE_QUESTIONS:
-        conversation.append({"role": "assistant", "text": question})
-        if key in answers:
-            conversation.append({"role": "user", "text": answers[key].answer})
-        else:
-            current_question = {"key": key, "section_title": section_title, "text": question}
-            break
+    if not ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE).exists():
+        ChatMessage.objects.create(
+            scope=ChatMessage.Scope.PROFILE,
+            role=ChatMessage.Role.ASSISTANT,
+            content="Let’s build a truthful profile I can use for every search and application. What are you studying, where, and what must your graduation internship include?",
+        )
+    conversation = ChatMessage.objects.filter(scope=ChatMessage.Scope.PROFILE)
 
     return render(request, "tracker/profile.html", {
         "candidate": candidate,
         "profile_form": profile_form,
         "document_form": document_form,
         "conversation": conversation,
-        "current_question": current_question,
-        "answered_count": len(answers),
-        "question_count": len(PROFILE_QUESTIONS),
+        "ai_configured": is_configured(),
     })
 
 
@@ -220,3 +274,39 @@ def inbox(request):
         "items": InboxItem.objects.select_related("campaign", "opportunity").prefetch_related("attachments")[:50],
         "waiting_count": InboxItem.objects.filter(status=InboxItem.Status.WAITING).count(),
     })
+
+
+@require_POST
+def robert_send(request):
+    user_text = request.POST.get("message", "").strip()
+    next_url = request.POST.get("next", "")
+    if not next_url.startswith("/") or next_url.startswith("//"):
+        next_url = reverse("dashboard")
+    if not user_text:
+        messages.error(request, "Type or dictate a message for Robert first.")
+        return redirect(next_url)
+    try:
+        assistant_text = robert_reply(user_text)
+    except AIUnavailable as error:
+        assistant_text = str(error)
+    except Exception:
+        assistant_text = "I could not reach the AI service just now. Your question is saved; try again shortly."
+    ChatMessage.objects.create(scope=ChatMessage.Scope.GENERAL, role=ChatMessage.Role.USER, content=user_text)
+    ChatMessage.objects.create(scope=ChatMessage.Scope.GENERAL, role=ChatMessage.Role.ASSISTANT, content=assistant_text)
+    return redirect(next_url + ("&" if "?" in next_url else "?") + "robert=open")
+
+
+@require_POST
+def transcribe_audio(request):
+    audio = request.FILES.get("audio")
+    if not audio:
+        return JsonResponse({"error": "No recording was received."}, status=400)
+    if audio.size > 15 * 1024 * 1024:
+        return JsonResponse({"error": "That recording is too large. Keep each dictation under five minutes."}, status=400)
+    try:
+        text = transcribe(audio, request.POST.get("duration_seconds", 0))
+        return JsonResponse({"text": text})
+    except AIUnavailable as error:
+        return JsonResponse({"error": str(error)}, status=503)
+    except Exception:
+        return JsonResponse({"error": "Transcription failed. Check the AI connection and try again."}, status=502)
