@@ -132,18 +132,25 @@ class ResearchSource(BaseModel):
 
 class OpportunityResearch(BaseModel):
     opportunity_id: int
-    verdict: str = Field(pattern="^(qualified|clarify|unsuitable|unverified)$")
+    verdict: str = Field(pattern="^(qualified|clarify|unsuitable|expired|unverified)$")
     company_description: str = Field(max_length=1000)
     company_location: str = Field(max_length=200)
     company_size: str = Field(max_length=120)
     company_website: str = Field(max_length=500)
+    company_reputation: str = Field(max_length=600)
+    cv_value: str = Field(max_length=600)
+    international_environment: str = Field(max_length=600)
+    growth_outlook: str = Field(max_length=600)
+    work_culture: str = Field(max_length=600)
     internship_location: str = Field(max_length=200)
     internship_dates: str = Field(max_length=200)
+    application_deadline: str = Field(max_length=200)
     work_arrangement: str = Field(max_length=160)
     japanese_requirement: str = Field(max_length=240)
     visa_support: str = Field(max_length=240)
     thesis_compatibility: str = Field(max_length=240)
     role_summary: str = Field(max_length=1400)
+    responsibilities: list[str] = Field(max_length=10)
     match_score: int = Field(ge=0, le=100)
     fit_summary: str = Field(max_length=1400)
     requirements: list[RequirementAssessment] = Field(max_length=15)
@@ -352,9 +359,9 @@ def qualify_opportunities(campaign, profile, opportunities):
         instructions=ROBERT_RULES + """
 Act as a rigorous job-verification and candidate-fit analyst. Open and investigate every supplied opportunity and search for corroborating official information.
 Return one report for every supplied opportunity_id. Prefer the vacancy page, official company website and official careers or immigration information. Every report must contain the useful source URLs you actually consulted.
-Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; unverified when the role/page cannot be verified.
+Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; expired when a trustworthy source shows it is closed or past its deadline; unverified when the role/page cannot be verified.
 Never interpret missing information as a negative fact. Use clear phrases such as "Not stated in the source" for unknown dates, visa support, work arrangement, thesis compatibility or Japanese level.
-Build a concise company description, company location, approximate size only when sourced, role summary, and practical facts. Do not produce promotional filler.
+Build a concise company description, company location, approximate size only when sourced, reputation, CV value, international environment, growth outlook, work culture, role summary, responsibilities, application deadline, and practical facts. Do not produce promotional filler. Reputation and work-culture claims require evidence; otherwise say they are not established by reliable public sources.
 Extract the role's meaningful qualifications and compare each with the VERIFIED candidate profile. Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Explain the evidence briefly.
 Do not penalize soft preferences as if they were hard rules. Native Japanese requirements, incompatible dates and inability to satisfy graduation/thesis requirements are material concerns when explicitly verified.
 Recalculate match_score conservatively after research. Provide a practical next action. Never apply, contact anyone, or invent facts.

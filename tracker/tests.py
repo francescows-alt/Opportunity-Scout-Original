@@ -135,11 +135,18 @@ class DashboardTests(TestCase):
                 "company_description": "An international technology company serving Japan.",
                 "company_location": "Tokyo, Japan", "company_size": "Small company",
                 "company_website": "https://example.com/", "internship_location": "Tokyo, Japan",
+                "company_reputation": "Known in its specialist market.",
+                "cv_value": "Provides relevant international growth evidence.",
+                "international_environment": "International customer base.",
+                "growth_outlook": "No reliable growth figures found.",
+                "work_culture": "Not established by reliable public sources.",
                 "internship_dates": "Not stated in the source", "work_arrangement": "Hybrid",
+                "application_deadline": "Not stated in the source",
                 "japanese_requirement": "Intermediate Japanese preferred",
                 "visa_support": "Not stated in the source",
                 "thesis_compatibility": "Requires confirmation",
                 "role_summary": "Supports growth research and campaigns.", "match_score": 84,
+                "responsibilities": ["Research customers", "Support campaigns"],
                 "fit_summary": "Strong functional fit with practical questions outstanding.",
                 "requirements": [
                     {"requirement": "Marketing experience", "status": "have", "evidence": "Verified Mobal experience."},
@@ -154,6 +161,8 @@ class DashboardTests(TestCase):
         opportunity.refresh_from_db()
         self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.CLARIFY)
         self.assertEqual(opportunity.japanese_requirement, "Intermediate Japanese preferred")
+        self.assertEqual(opportunity.application_deadline_text, "Not stated in the source")
+        self.assertEqual(opportunity.responsibilities[0], "Research customers")
         self.assertEqual(opportunity.requirements_assessment[0]["status"], "have")
         self.assertEqual(opportunity.research_sources[0]["title"], "Official role")
         self.assertIsNotNone(opportunity.verified_at)
@@ -163,6 +172,20 @@ class DashboardTests(TestCase):
         self.assertContains(report, "Japanese required")
         self.assertContains(report, "You have it")
         self.assertContains(report, "You don’t have it")
+        self.assertContains(report, "Company intelligence")
+        self.assertContains(report, "Main responsibilities")
+
+    def test_serious_list_only_shows_qualified_research(self):
+        organization = Organization.objects.create(name="Serious Company")
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Qualified Internship",
+            verification_status=Opportunity.VerificationStatus.QUALIFIED,
+        )
+        other = Organization.objects.create(name="Still Unchecked")
+        Opportunity.objects.create(campaign=self.campaign, organization=other, title="Unknown Internship")
+        response = self.client.get(reverse("dashboard"), {"review": "serious"})
+        self.assertContains(response, "Serious Company")
+        self.assertNotContains(response, "Still Unchecked")
 
 
 @override_settings(OPENAI_API_KEY="")

@@ -102,6 +102,10 @@ dd { margin: 0; }
 .stats-grid article { display: flex; min-height: 6.7rem; flex-direction: column; justify-content: space-between; border: 1px solid var(--line); border-radius: 1rem; background: white; padding: 1.15rem; }
 .stats-grid span { color: #687592; font-size: 0.9rem; }
 .stats-grid strong { color: #172036; font-size: 1.8rem; font-weight: 500; }
+.review-tabs { display: flex; gap: 0.35rem; margin-bottom: 0.8rem; overflow-x: auto; }
+.review-tabs a { display: inline-flex; align-items: center; gap: 0.4rem; border-radius: 999px; padding: 0.48rem 0.72rem; color: #59647b; font-size: 0.78rem; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.review-tabs a:hover, .review-tabs a.current { background: #202944; color: white; }
+.review-tabs span { display: inline-grid; min-width: 1.35rem; height: 1.35rem; place-items: center; border-radius: 999px; background: rgba(255,255,255,0.18); font-size: 0.67rem; }
 .filters { display: flex; gap: 0.7rem; margin-bottom: 1rem; }
 .search-box { display: flex; flex: 1; align-items: center; gap: 0.5rem; border: 1px solid var(--line); border-radius: 0.75rem; background: white; padding: 0 0.8rem; }
 .search-box input { width: 100%; border: 0; outline: 0; padding: 0.8rem 0; background: transparent; font: inherit; }
@@ -121,7 +125,7 @@ dd { margin: 0; }
 .status-rejected { background: #faecec; color: #9b3030; }
 .status-stack { display: flex; align-items: flex-start; flex-direction: column; gap: 0.25rem; }
 .status-stack small { font-size: 0.67rem; font-weight: 750; }
-.verification-pending, .verification-unverified { color: #6d7281; }
+.verification-pending, .verification-unverified, .verification-expired { color: #6d7281; }
 .verification-qualified { color: #087560; }
 .verification-clarify { color: #9b6200; }
 .verification-unsuitable { color: #aa3434; }
@@ -137,6 +141,7 @@ dd { margin: 0; }
 .verification-badge.verification-qualified { background: #e5f7f0; }
 .verification-badge.verification-clarify { background: #fff3d9; }
 .verification-badge.verification-unsuitable { background: #fae8e8; }
+.verification-badge.verification-expired { background: #eeeef1; }
 .detail-block { border-bottom: 1px solid var(--line); padding: 1.1rem 0; }
 .detail-block h3 { margin: 0 0 0.6rem; font-size: 0.98rem; }
 .detail-block p { margin-bottom: 0; }
@@ -150,6 +155,11 @@ dd { margin: 0; }
 .company-snapshot dl div { display: block; }
 .company-snapshot dt { margin-bottom: 0.1rem; }
 .company-snapshot dd { font-weight: 700; }
+.intelligence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; }
+.intelligence-grid article { border: 1px solid var(--line); border-radius: 0.8rem; background: #fafbfe; padding: 0.8rem; }
+.intelligence-grid article:first-child { grid-column: 1 / -1; }
+.intelligence-grid small { color: var(--green); font-size: 0.68rem; font-weight: 850; letter-spacing: 0.08em; text-transform: uppercase; }
+.intelligence-grid p { margin: 0.25rem 0 0; color: #465169; font-size: 0.8rem; }
 .research-title { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
 .research-title small { color: var(--muted); }
 .facts-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.65rem; }
@@ -158,6 +168,9 @@ dd { margin: 0; }
 .facts-grid small { color: var(--muted); font-size: 0.69rem; text-transform: uppercase; }
 .facts-grid strong { font-size: 0.83rem; line-height: 1.35; }
 .fit-report p { color: #344056; }
+.responsibilities ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin: 0; padding: 0; list-style: none; }
+.responsibilities li { position: relative; border-radius: 0.7rem; background: #f6f7fa; padding: 0.7rem 0.75rem 0.7rem 1.9rem; font-size: 0.82rem; }
+.responsibilities li::before { content: "→"; position: absolute; left: 0.7rem; color: var(--green); font-weight: 900; }
 .requirements-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.7rem; }
 .requirement-column { overflow: hidden; border: 1px solid var(--line); border-radius: 0.9rem; background: #fbfcfe; }
 .requirement-column header { display: flex; align-items: center; gap: 0.55rem; padding: 0.8rem; }
@@ -431,7 +444,8 @@ dd { margin: 0; }
     .application-row > :last-child { grid-column: 1 / -1; }
     .detail-title { flex-direction: column; }
     .detail-verdict { align-items: flex-start; }
-    .company-snapshot, .facts-grid, .requirements-grid { grid-template-columns: 1fr; }
+    .company-snapshot, .facts-grid, .requirements-grid, .intelligence-grid, .responsibilities ul { grid-template-columns: 1fr; }
+    .intelligence-grid article:first-child { grid-column: auto; }
     .profile-layout { grid-template-columns: 1fr; }
     .profile-workspace, .documents-grid, .analysis-columns, .cv-layout, .source-grid { grid-template-columns: 1fr; }
     .cv-sidebar { border-top: 1px solid var(--line); border-left: 0; }

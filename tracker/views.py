@@ -32,6 +32,7 @@ def dashboard(request):
     opportunities = Opportunity.objects.select_related("campaign", "organization")
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
+    review = request.GET.get("review", "").strip()
     if query:
         opportunities = opportunities.filter(
             Q(organization__name__icontains=query)
@@ -40,6 +41,18 @@ def dashboard(request):
         )
     if status:
         opportunities = opportunities.filter(status=status)
+    if review == "serious":
+        opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.QUALIFIED)
+    elif review == "clarify":
+        opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.CLARIFY)
+    elif review == "research":
+        opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.PENDING)
+    elif review == "not_suitable":
+        opportunities = opportunities.filter(verification_status__in=[
+            Opportunity.VerificationStatus.UNSUITABLE,
+            Opportunity.VerificationStatus.EXPIRED,
+            Opportunity.VerificationStatus.UNVERIFIED,
+        ])
 
     paginator = Paginator(opportunities, 25)
     page = paginator.get_page(request.GET.get("page"))
@@ -56,6 +69,7 @@ def dashboard(request):
         "selected": selected,
         "query": query,
         "current_status": status,
+        "current_review": review,
         "statuses": Opportunity.Status.choices,
         "tracked_count": all_opportunities.count(),
         "draft_count": all_opportunities.filter(status=Opportunity.Status.DRAFT_READY).count(),
@@ -67,6 +81,12 @@ def dashboard(request):
         "ai_configured": is_configured(),
         "research_needed_count": all_opportunities.filter(
             verification_status=Opportunity.VerificationStatus.PENDING,
+        ).count(),
+        "serious_count": all_opportunities.filter(
+            verification_status=Opportunity.VerificationStatus.QUALIFIED,
+        ).count(),
+        "clarify_count": all_opportunities.filter(
+            verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
     }
     return render(request, "tracker/dashboard.html", context)
@@ -182,8 +202,15 @@ def qualify_discoveries(request):
             opportunity.company_description = report.company_description.strip()
             opportunity.company_location = report.company_location.strip()
             opportunity.company_size = report.company_size.strip()
+            opportunity.company_reputation = report.company_reputation.strip()
+            opportunity.cv_value = report.cv_value.strip()
+            opportunity.international_environment = report.international_environment.strip()
+            opportunity.growth_outlook = report.growth_outlook.strip()
+            opportunity.work_culture = report.work_culture.strip()
             opportunity.location = report.internship_location.strip() or opportunity.location
             opportunity.internship_dates = report.internship_dates.strip()
+            opportunity.application_deadline_text = report.application_deadline.strip()
+            opportunity.responsibilities = report.responsibilities
             opportunity.work_arrangement = report.work_arrangement.strip()
             opportunity.japanese_requirement = report.japanese_requirement.strip()
             opportunity.visa_support = report.visa_support.strip()
@@ -200,7 +227,9 @@ def qualify_discoveries(request):
                 opportunity.status = Opportunity.Status.QUALIFIED
             opportunity.save(update_fields=[
                 "verification_status", "company_description", "company_location", "company_size",
+                "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
                 "location", "internship_dates", "work_arrangement", "japanese_requirement",
+                "application_deadline_text", "responsibilities",
                 "visa_support", "thesis_compatibility", "job_description", "match_score",
                 "fit_summary", "requirements_assessment", "research_sources", "research_summary",
                 "next_action", "verified_at", "status", "updated_at",

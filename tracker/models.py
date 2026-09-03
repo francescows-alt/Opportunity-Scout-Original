@@ -180,6 +180,7 @@ class Opportunity(models.Model):
         QUALIFIED = "qualified", "Qualified"
         CLARIFY = "clarify", "Needs clarification"
         UNSUITABLE = "unsuitable", "Unsuitable"
+        EXPIRED = "expired", "Expired"
         UNVERIFIED = "unverified", "Could not verify"
 
     campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="opportunities")
@@ -204,7 +205,14 @@ class Opportunity(models.Model):
     company_description = models.TextField(blank=True)
     company_location = models.CharField(max_length=200, blank=True)
     company_size = models.CharField(max_length=120, blank=True)
+    company_reputation = models.TextField(blank=True)
+    cv_value = models.TextField(blank=True)
+    international_environment = models.TextField(blank=True)
+    growth_outlook = models.TextField(blank=True)
+    work_culture = models.TextField(blank=True)
     internship_dates = models.CharField(max_length=200, blank=True)
+    application_deadline_text = models.CharField(max_length=200, blank=True)
+    responsibilities = models.JSONField(default=list, blank=True)
     work_arrangement = models.CharField(max_length=160, blank=True)
     japanese_requirement = models.CharField(max_length=240, blank=True)
     visa_support = models.CharField(max_length=240, blank=True)
