@@ -125,6 +125,7 @@ class CandidateProfileTests(TestCase):
     def test_private_background_is_hidden_in_dialog(self):
         response = self.client.get(reverse("profile"))
         self.assertContains(response, "Private background")
+        self.assertContains(response, "LinkedIn &amp; documents")
         self.assertContains(response, "Full background essay")
         self.assertContains(response, "background-notes-dialog")
 

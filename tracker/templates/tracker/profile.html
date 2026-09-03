@@ -5,6 +5,7 @@
 <section class="profile-heading">
     <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">A professional working profile and CV built from your evidence, preferences, and conversations with Robert.</p></div>
     <div class="profile-heading-actions">
+        <a class="button secondary" href="#profile-sources">LinkedIn &amp; documents</a>
         <button class="button secondary background-notes-open" type="button" aria-haspopup="dialog">Private background</button>
         <span class="waiting-badge">{% if ai_configured %}Robert connected{% else %}AI setup needed{% endif %}</span>
     </div>
@@ -78,7 +79,7 @@
 <section class="profile-empty"><span>◎</span><div><h2>Your professional profile will appear here</h2><p>Add source material below, then ask Robert to analyze it.</p></div></section>
 {% endif %}
 
-<section class="documents-wide source-material">
+<section id="profile-sources" class="documents-wide source-material">
     <div class="source-heading"><div><span class="step-number">＋</span><div><p class="eyebrow">Evidence sources</p><h2>Keep Robert accurate</h2><p>Add documents or LinkedIn information here. Robert compares all sources and proposes CV changes; you approve them before they become part of your profile.</p></div></div></div>
     <div class="source-grid">
         <div class="source-files">

@@ -291,7 +291,7 @@ dd { margin: 0; }
 .profile-empty > span { color: var(--green); font-size: 2rem; }
 .profile-empty h2, .profile-empty p { margin: 0; }
 .profile-empty p { color: var(--muted); }
-.source-material { margin-bottom: 1rem; }
+.source-material { margin-bottom: 1rem; scroll-margin-top: 1rem; }
 .source-heading > div { display: flex; gap: 0.8rem; }
 .source-heading h2 { margin-bottom: 0.3rem; }
 .source-heading p:last-child { max-width: 52rem; margin-bottom: 1.1rem; color: var(--muted); }
