@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
-from .ai import DocumentProfileAnalysis, EvidenceItem
+from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
 
 
@@ -90,6 +90,35 @@ class DashboardTests(TestCase):
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(len(response.context["page"].object_list), 25)
         self.assertEqual(response.context["page"].paginator.num_pages, 2)
+
+    def test_dashboard_leads_with_autonomous_discovery(self):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "Let Robert search first")
+        self.assertContains(response, "Find internships now")
+
+    @patch("tracker.views.research_internships")
+    def test_robert_discovery_adds_source_backed_opportunity(self, research):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        research.return_value = InternshipDiscoveryBatch(
+            summary="One relevant role found.",
+            opportunities=[{
+                "company": "Example Japan", "title": "Growth Intern",
+                "kind": "advertised", "location": "Tokyo, Japan",
+                "source_url": "https://example.com/jobs/growth-intern",
+                "description": "A real example vacancy.", "match_score": 82,
+                "fit_summary": "Relevant international growth work.",
+                "missing_information": ["Visa support"],
+                "next_action": "Verify visa support and internship dates.",
+            }],
+        )
+        response = self.client.post(reverse("discover-internships"))
+        self.assertRedirects(response, reverse("dashboard"))
+        opportunity = Opportunity.objects.get()
+        self.assertEqual(opportunity.organization.name, "Example Japan")
+        self.assertEqual(opportunity.match_score, 82)
+        self.assertIn("Unknown: Visa support", opportunity.fit_summary)
+        self.assertEqual(opportunity.status, Opportunity.Status.DISCOVERED)
 
 
 @override_settings(OPENAI_API_KEY="")

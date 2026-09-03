@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import json
 
 from django.conf import settings
 from django.db.models import Sum
@@ -98,6 +99,24 @@ class DocumentProfileAnalysis(BaseModel):
         output.append("Looking for\n" + "\n".join(f"• {point}" for point in profile.looking_for))
         output.append("Not looking for\n" + "\n".join(f"• {point}" for point in profile.not_looking_for))
         return "\n\n".join(part for part in output if part.strip())
+
+
+class InternshipDiscovery(BaseModel):
+    company: str = Field(max_length=200)
+    title: str = Field(max_length=240)
+    kind: str = Field(pattern="^(advertised|cold_outreach)$")
+    location: str = Field(max_length=200)
+    source_url: str = Field(max_length=500)
+    description: str = Field(max_length=1800)
+    match_score: int = Field(ge=0, le=100)
+    fit_summary: str = Field(max_length=1200)
+    missing_information: list[str] = Field(max_length=5)
+    next_action: str = Field(max_length=240)
+
+
+class InternshipDiscoveryBatch(BaseModel):
+    summary: str = Field(max_length=800)
+    opportunities: list[InternshipDiscovery] = Field(max_length=12)
 
 
 def is_configured():
@@ -224,6 +243,49 @@ Do not silently turn a preference into a rejection rule.
         store=False,
     )
     _record_text_usage(response, "campaign")
+    return response.output_parsed
+
+
+def research_internships(campaign, profile):
+    """Search the live web once and return a small, source-backed discovery batch."""
+    campaign_data = {
+        field: getattr(campaign, field)
+        for field in [
+            "name", "goal", "locations", "start_date", "end_date", "desired_work",
+            "avoid_work", "work_style", "company_preferences", "language_requirements",
+            "visa_requirements", "university_requirements", "notes", "natural_language_brief",
+        ]
+    }
+    campaign_data["start_date"] = str(campaign_data["start_date"] or "")
+    campaign_data["end_date"] = str(campaign_data["end_date"] or "")
+    profile_data = profile.structured_profile or {"profile_notes": profile.profile_draft[:5000]}
+    response = _client().responses.parse(
+        model=settings.OPENAI_CHAT_MODEL,
+        tools=[{"type": "web_search"}],
+        max_tool_calls=8,
+        instructions=ROBERT_RULES + """
+Act as a careful internship research analyst. Search the live public web autonomously using the active campaign and verified candidate profile.
+Find up to 12 strong possibilities, prioritizing currently advertised internships with direct employer or reputable job-board pages. You may also include unusually strong companies as cold-outreach targets, but label them cold_outreach and link to an official company page.
+Every result must have a real source URL you actually found. Never invent a vacancy, deadline, visa policy, language requirement, company fact, or URL.
+Prefer primary company career pages. Exclude a role when the source clearly requires native Japanese or clearly conflicts with a hard campaign requirement.
+The requested dates may be in the future. Do not claim a role supports those dates unless the source says so; instead list that as missing information.
+Score fit conservatively against verified facts. The description and fit summary must clearly distinguish confirmed facts from unknowns.
+Use missing_information for visa support, exact dates, thesis compatibility, Japanese level, or work arrangement when the source does not establish them.
+Return only distinct, useful results. Do not apply, contact anyone, or claim that any action was taken.
+""",
+        input=(
+            f"Today is {timezone.localdate().isoformat()}.\n"
+            "ACTIVE SEARCH CAMPAIGN:\n" + json.dumps(campaign_data, ensure_ascii=False, default=str)[:9000]
+            + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:9000]
+            + "\n\nSearch broadly enough to include prestigious international firms, strong startups and SMEs, and unexpectedly valuable CV-building work."
+        ),
+        text_format=InternshipDiscoveryBatch,
+        max_output_tokens=6000,
+        store=False,
+    )
+    _record_text_usage(response, "discovery")
+    # Conservative allowance so the app's local safety meter accounts for the web tool too.
+    AIUsage.objects.create(purpose="discovery_web", estimated_cost_usd=Decimal("0.030000"))
     return response.output_parsed
 
 

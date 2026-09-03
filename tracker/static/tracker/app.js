@@ -24,4 +24,17 @@ document.addEventListener("DOMContentLoaded", () => {
             if (event.target === backgroundDialog) backgroundDialog.close();
         });
     }
+
+    const discoveryForm = document.querySelector("[data-discovery-form]");
+    if (discoveryForm) {
+        discoveryForm.addEventListener("submit", () => {
+            const button = discoveryForm.querySelector("button[type='submit']");
+            const progress = discoveryForm.querySelector(".discovery-progress");
+            if (button) {
+                button.disabled = true;
+                button.textContent = "Robert is searching…";
+            }
+            if (progress) progress.hidden = false;
+        });
+    }
 });

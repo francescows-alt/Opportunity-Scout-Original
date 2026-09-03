@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.contrib import messages
 from django.core.paginator import Paginator
@@ -9,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, robert_reply, transcribe
+from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, research_internships, robert_reply, transcribe
 
 from .forms import (
     CampaignPromptForm,
@@ -20,7 +21,7 @@ from .forms import (
     QuickInboxForm,
     SearchCampaignForm,
 )
-from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign
 
 
 def home(request):
@@ -63,8 +64,73 @@ def dashboard(request):
             status__in=[Opportunity.Status.REJECTED, Opportunity.Status.OFFER]
         ).count(),
         "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
+        "ai_configured": is_configured(),
     }
     return render(request, "tracker/dashboard.html", context)
+
+
+@require_POST
+def discover_internships(request):
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    if not campaign:
+        messages.error(request, "Create and activate a search campaign before Robert searches.")
+        return redirect("campaign-list")
+    profile = CandidateProfile.objects.filter(pk=1).first()
+    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
+        messages.error(request, "Finish a basic profile first so Robert can judge which internships fit you.")
+        return redirect("profile")
+
+    try:
+        batch = research_internships(campaign, profile)
+        added = 0
+        updated = 0
+        for item in batch.opportunities:
+            source_url = item.source_url.strip()
+            parsed = urlparse(source_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                continue
+            organization = Organization.objects.filter(name__iexact=item.company.strip()).first()
+            if organization is None:
+                organization = Organization.objects.create(name=item.company.strip(), location=item.location.strip())
+            missing = "\n".join(f"Unknown: {fact}" for fact in item.missing_information)
+            fit_summary = item.fit_summary.strip()
+            if missing:
+                fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
+            opportunity = Opportunity.objects.filter(campaign=campaign, source_url=source_url).first()
+            values = {
+                "organization": organization,
+                "title": item.title.strip(),
+                "kind": item.kind,
+                "location": item.location.strip(),
+                "job_description": item.description.strip(),
+                "match_score": item.match_score,
+                "fit_summary": fit_summary,
+                "next_action": item.next_action.strip(),
+            }
+            if opportunity:
+                for field, value in values.items():
+                    setattr(opportunity, field, value)
+                opportunity.save(update_fields=list(values) + ["updated_at"])
+                updated += 1
+            else:
+                Opportunity.objects.create(
+                    campaign=campaign,
+                    source_url=source_url,
+                    status=Opportunity.Status.DISCOVERED,
+                    **values,
+                )
+                added += 1
+        ChatMessage.objects.create(
+            scope=ChatMessage.Scope.GENERAL,
+            role=ChatMessage.Role.ASSISTANT,
+            content=f"Autonomous search complete. {batch.summary} I added {added} new possibilities and refreshed {updated} existing ones. Nothing was applied to.",
+        )
+        messages.success(request, f"Robert found and checked the web: {added} new possibilities added, {updated} existing ones refreshed.")
+    except AIUnavailable as error:
+        messages.error(request, str(error))
+    except Exception:
+        messages.error(request, "Robert’s web search was interrupted. Nothing was added incorrectly; please try again.")
+    return redirect("dashboard")
 
 
 def campaign_list(request):

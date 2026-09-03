@@ -6,7 +6,20 @@
         <h1>Applications</h1>
         <p class="lede">{% now "l, j F" %}{% if active_campaign %} · {{ active_campaign.name }}{% endif %}</p>
     </div>
-    <a class="button primary add-button" href="{% url 'inbox' %}">＋<span>Quick add</span></a>
+    <a class="button secondary add-button" href="{% url 'inbox' %}">＋<span>Quick add</span></a>
+</section>
+
+<section class="discovery-bar">
+    <div class="discovery-icon">R</div>
+    <div><p class="eyebrow">Autonomous discovery</p><h2>Let Robert search first</h2><p>Robert searches the live web using your active campaign and profile, filters obvious mismatches, and adds source-backed possibilities below. He never applies.</p></div>
+    {% if active_campaign %}
+    <form method="post" action="{% url 'discover-internships' %}" data-discovery-form>
+        {% csrf_token %}<button class="button primary" type="submit" {% if not ai_configured %}disabled title="Connect OpenAI first"{% endif %}>Find internships now</button>
+        <small class="discovery-progress" hidden>Robert is searching and checking sources. This may take about a minute…</small>
+    </form>
+    {% else %}
+    <a class="button primary" href="{% url 'campaign-create' %}">Create search first</a>
+    {% endif %}
 </section>
 
 <section class="stats-grid" aria-label="Application totals">
@@ -60,8 +73,7 @@
 {% else %}
 <section class="empty-state">
     <div class="empty-icon">◎</div><h2>No applications yet</h2>
-    <p>Add a vacancy you found or a company you may want to contact.</p>
-    <a class="button primary" href="{% url 'inbox' %}">Open the job inbox</a>
+    <p>Ask Robert to search above. Manual job entry is available only as a backup.</p>
 </section>
 {% endif %}
 {% endblock %}
