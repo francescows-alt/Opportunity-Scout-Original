@@ -391,6 +391,67 @@ class DashboardTests(TestCase):
         organization.refresh_from_db()
         self.assertEqual(organization.logo_url, "")
 
+    @patch("tracker.views.qualify_opportunities")
+    def test_one_bad_report_does_not_block_the_rest_of_the_batch(self, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization_a = Organization.objects.create(name="Company One")
+        organization_b = Organization.objects.create(name="Company Two")
+        opportunity_a = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization_a, title="Role One",
+            source_url="https://example.com/jobs/one",
+        )
+        opportunity_b = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization_b, title="Role Two",
+            source_url="https://example.com/jobs/two",
+        )
+
+        def make_report(opportunity_id):
+            return {
+                "opportunity_id": opportunity_id, "verdict": "clarify",
+                "company_description": "A company.", "company_location": "Tokyo, Japan",
+                "company_size": "11–50 employees", "company_country": "Japan",
+                "company_industry": "SaaS", "company_website": "https://example.com/",
+                "internship_location": "Tokyo, Japan", "company_logo_url": "",
+                "company_reputation": "Not established by reliable public sources.",
+                "cv_value": "Some relevant evidence.", "international_environment": "Not established.",
+                "growth_outlook": "Not established.", "work_culture": "Not established.",
+                "internship_dates": "Not stated", "internship_start_date_iso": None,
+                "internship_end_date_iso": None, "minimum_duration": "Not stated",
+                "work_arrangement": "Not stated", "application_deadline": "Not stated",
+                "application_deadline_iso": None, "japanese_requirement": "Not stated",
+                "posting_language": "English", "posting_language_note": "Written in English.",
+                "japanese_only_inferred": False, "visa_support": "Not stated",
+                "thesis_compatibility": "Requires confirmation",
+                "role_summary": "Supports growth work.", "match_score": 60,
+                "responsibilities": ["Support campaigns"],
+                "what_you_would_do": "Support marketing campaigns day to day for the team.",
+                "what_company_needs": "A student available for the internship period.",
+                "candidate_fee_required": False, "candidate_fee": "None found",
+                "compensation": "Not stated", "fit_summary": "Reasonable functional fit.",
+                "requirements": [], "sources": [], "next_action": "Confirm visa support.",
+            }
+
+        qualify.return_value = OpportunityResearchBatch(
+            summary="Checked both roles.",
+            reports=[make_report(opportunity_a.id), make_report(opportunity_b.id)],
+        )
+
+        real_save = Opportunity.save
+
+        def flaky_save(self, *args, **kwargs):
+            if self.pk == opportunity_a.id:
+                raise RuntimeError("simulated save failure")
+            return real_save(self, *args, **kwargs)
+
+        with patch.object(Opportunity, "save", flaky_save):
+            self.client.post(reverse("qualify-discoveries"))
+
+        opportunity_a.refresh_from_db()
+        opportunity_b.refresh_from_db()
+        self.assertIsNone(opportunity_a.verified_at)
+        self.assertIsNotNone(opportunity_b.verified_at)
+        self.assertEqual(opportunity_b.verification_status, Opportunity.VerificationStatus.CLARIFY)
+
     def test_list_shows_company_research_and_expired_label(self):
         organization = Organization.objects.create(
             name="Archived Fintech", logo_url="https://example.com/logo.png",

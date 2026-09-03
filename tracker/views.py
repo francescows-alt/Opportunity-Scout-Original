@@ -1,4 +1,5 @@
 import hashlib
+import logging
 from datetime import timedelta
 from pathlib import Path
 import re
@@ -9,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -17,6 +18,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, robert_reply, transcribe
+
+logger = logging.getLogger(__name__)
 
 from .forms import (
     CampaignPromptForm,
@@ -424,46 +427,54 @@ def discover_internships(request):
             if canonical_url in known_urls or fingerprint in known_fingerprints:
                 duplicates += 1
                 continue
-            organization = Organization.objects.filter(name__iexact=item.company.strip()).first()
-            if organization is None:
-                organization = Organization.objects.create(name=item.company.strip(), location=item.location.strip())
-            missing = "\n".join(f"Unknown: {fact}" for fact in item.missing_information)
-            fit_summary = item.fit_summary.strip()
-            if missing:
-                fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
-            values = {
-                "organization": organization,
-                "title": item.title.strip(),
-                "kind": item.kind,
-                "location": item.location.strip(),
-                "job_description": item.description.strip(),
-                "match_score": item.match_score,
-                "fit_summary": fit_summary,
-                "next_action": item.next_action.strip(),
-                "candidate_fee_required": item.candidate_fee_required,
-                "candidate_fee": item.candidate_fee.strip(),
-                "compensation": item.compensation.strip(),
-                "canonical_url": canonical_url,
-                "fingerprint": fingerprint,
-                "verification_status": Opportunity.VerificationStatus.PENDING,
-                "verified_at": None,
-            }
-            if item.candidate_fee_required:
-                # Save it (marked unsuitable) instead of discarding it, so it stays out of
-                # future known-roles context and Robert never re-spends search budget on it.
-                values["verification_status"] = Opportunity.VerificationStatus.UNSUITABLE
-                values["verified_at"] = timezone.now()
-                values["next_action"] = "Not suitable — candidate fee required"
-                fee_blocked += 1
-            Opportunity.objects.create(
-                campaign=campaign,
-                source_url=source_url,
-                status=Opportunity.Status.DISCOVERED,
-                **values,
-            )
+            try:
+                with transaction.atomic():
+                    organization = Organization.objects.filter(name__iexact=item.company.strip()).first()
+                    if organization is None:
+                        organization = Organization.objects.create(name=item.company.strip(), location=item.location.strip())
+                    missing = "\n".join(f"Unknown: {fact}" for fact in item.missing_information)
+                    fit_summary = item.fit_summary.strip()
+                    if missing:
+                        fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
+                    values = {
+                        "organization": organization,
+                        "title": item.title.strip(),
+                        "kind": item.kind,
+                        "location": item.location.strip(),
+                        "job_description": item.description.strip(),
+                        "match_score": item.match_score,
+                        "fit_summary": fit_summary,
+                        "next_action": item.next_action.strip(),
+                        "candidate_fee_required": item.candidate_fee_required,
+                        "candidate_fee": item.candidate_fee.strip(),
+                        "compensation": item.compensation.strip(),
+                        "canonical_url": canonical_url,
+                        "fingerprint": fingerprint,
+                        "verification_status": Opportunity.VerificationStatus.PENDING,
+                        "verified_at": None,
+                    }
+                    if item.candidate_fee_required:
+                        # Save it (marked unsuitable) instead of discarding it, so it stays out of
+                        # future known-roles context and Robert never re-spends search budget on it.
+                        values["verification_status"] = Opportunity.VerificationStatus.UNSUITABLE
+                        values["verified_at"] = timezone.now()
+                        values["next_action"] = "Not suitable — candidate fee required"
+                    Opportunity.objects.create(
+                        campaign=campaign,
+                        source_url=source_url,
+                        status=Opportunity.Status.DISCOVERED,
+                        **values,
+                    )
+            except Exception:
+                logger.exception(
+                    "Skipped one discovered opportunity (%r at %r) after a save error", item.title, item.company,
+                )
+                continue
             known_urls.add(canonical_url)
             known_fingerprints.add(fingerprint)
-            if not item.candidate_fee_required:
+            if item.candidate_fee_required:
+                fee_blocked += 1
+            else:
                 added += 1
         next_sequence = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
         SearchCycle.objects.create(
@@ -486,6 +497,7 @@ def discover_internships(request):
     except AIUnavailable as error:
         messages.error(request, str(error))
     except Exception:
+        logger.exception("Discovery run failed for campaign %s", campaign.id)
         messages.error(request, "Robert’s web search was interrupted. Nothing was added incorrectly; please try again.")
     return redirect("dashboard")
 
@@ -519,83 +531,90 @@ def qualify_discoveries(request):
             opportunity = opportunity_map.get(report.opportunity_id)
             if opportunity is None:
                 continue
-            website = report.company_website.strip()
-            parsed_website = urlparse(website)
-            if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
-                opportunity.organization.website = website
-            logo_url = report.company_logo_url.strip()
-            if _looks_like_logo_image(logo_url):
-                opportunity.organization.logo_url = logo_url
-            if report.company_location.strip():
-                opportunity.organization.location = report.company_location.strip()
-            opportunity.organization.save(update_fields=["website", "logo_url", "location", "updated_at"])
+            try:
+                with transaction.atomic():
+                    website = report.company_website.strip()
+                    parsed_website = urlparse(website)
+                    if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
+                        opportunity.organization.website = website
+                    logo_url = report.company_logo_url.strip()
+                    if _looks_like_logo_image(logo_url):
+                        opportunity.organization.logo_url = logo_url
+                    if report.company_location.strip():
+                        opportunity.organization.location = report.company_location.strip()
+                    opportunity.organization.save(update_fields=["website", "logo_url", "location", "updated_at"])
 
-            safe_sources = []
-            for source in report.sources:
-                parsed_source = urlparse(source.url.strip())
-                if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
-                    safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
-            opportunity.verification_status = (
-                Opportunity.VerificationStatus.UNSUITABLE
-                if report.candidate_fee_required else report.verdict
-            )
-            opportunity.company_description = report.company_description.strip()
-            opportunity.company_location = report.company_location.strip()
-            opportunity.company_size = report.company_size.strip()
-            opportunity.company_country = report.company_country.strip()
-            opportunity.company_industry = report.company_industry.strip()
-            opportunity.company_reputation = report.company_reputation.strip()
-            opportunity.cv_value = report.cv_value.strip()
-            opportunity.international_environment = report.international_environment.strip()
-            opportunity.growth_outlook = report.growth_outlook.strip()
-            opportunity.work_culture = report.work_culture.strip()
-            opportunity.location = report.internship_location.strip() or opportunity.location
-            opportunity.internship_dates = report.internship_dates.strip()
-            opportunity.internship_start_date = report.internship_start_date_iso
-            opportunity.internship_end_date = report.internship_end_date_iso
-            opportunity.minimum_duration = report.minimum_duration.strip()
-            opportunity.application_deadline_text = report.application_deadline.strip()
-            opportunity.deadline = report.application_deadline_iso
-            opportunity.responsibilities = report.responsibilities
-            opportunity.what_you_would_do = report.what_you_would_do.strip()
-            opportunity.what_company_needs = report.what_company_needs.strip()
-            opportunity.candidate_fee_required = report.candidate_fee_required
-            opportunity.candidate_fee = report.candidate_fee.strip()
-            opportunity.compensation = report.compensation.strip()
-            opportunity.work_arrangement = report.work_arrangement.strip()
-            opportunity.japanese_requirement = report.japanese_requirement.strip()
-            opportunity.posting_language = report.posting_language
-            opportunity.posting_language_note = report.posting_language_note.strip()
-            opportunity.japanese_only_inferred = report.japanese_only_inferred
-            opportunity.visa_support = report.visa_support.strip()
-            opportunity.thesis_compatibility = report.thesis_compatibility.strip()
-            opportunity.job_description = report.role_summary.strip() or opportunity.job_description
-            opportunity.match_score = report.match_score
-            opportunity.fit_summary = report.fit_summary.strip()
-            opportunity.requirements_assessment = [
-                item.model_dump() for item in report.requirements
-                if _is_concrete_qualification(item.requirement)
-            ]
-            opportunity.research_sources = safe_sources
-            opportunity.research_summary = batch.summary.strip()
-            opportunity.next_action = report.next_action.strip()
-            opportunity.verified_at = timezone.now()
-            if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
-                opportunity.status = Opportunity.Status.QUALIFIED
-            opportunity.save(update_fields=[
-                "verification_status", "company_description", "company_location", "company_size",
-                "company_country", "company_industry",
-                "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
-                "location", "internship_dates", "internship_start_date", "internship_end_date",
-                "minimum_duration", "work_arrangement", "japanese_requirement",
-                "posting_language", "posting_language_note", "japanese_only_inferred",
-                "application_deadline_text", "deadline", "responsibilities",
-                "what_you_would_do", "what_company_needs", "candidate_fee_required",
-                "candidate_fee", "compensation",
-                "visa_support", "thesis_compatibility", "job_description", "match_score",
-                "fit_summary", "requirements_assessment", "research_sources", "research_summary",
-                "next_action", "verified_at", "status", "updated_at",
-            ])
+                    safe_sources = []
+                    for source in report.sources:
+                        parsed_source = urlparse(source.url.strip())
+                        if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
+                            safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
+                    opportunity.verification_status = (
+                        Opportunity.VerificationStatus.UNSUITABLE
+                        if report.candidate_fee_required else report.verdict
+                    )
+                    opportunity.company_description = report.company_description.strip()
+                    opportunity.company_location = report.company_location.strip()
+                    opportunity.company_size = report.company_size.strip()
+                    opportunity.company_country = report.company_country.strip()
+                    opportunity.company_industry = report.company_industry.strip()
+                    opportunity.company_reputation = report.company_reputation.strip()
+                    opportunity.cv_value = report.cv_value.strip()
+                    opportunity.international_environment = report.international_environment.strip()
+                    opportunity.growth_outlook = report.growth_outlook.strip()
+                    opportunity.work_culture = report.work_culture.strip()
+                    opportunity.location = report.internship_location.strip() or opportunity.location
+                    opportunity.internship_dates = report.internship_dates.strip()
+                    opportunity.internship_start_date = report.internship_start_date_iso
+                    opportunity.internship_end_date = report.internship_end_date_iso
+                    opportunity.minimum_duration = report.minimum_duration.strip()
+                    opportunity.application_deadline_text = report.application_deadline.strip()
+                    opportunity.deadline = report.application_deadline_iso
+                    opportunity.responsibilities = report.responsibilities
+                    opportunity.what_you_would_do = report.what_you_would_do.strip()
+                    opportunity.what_company_needs = report.what_company_needs.strip()
+                    opportunity.candidate_fee_required = report.candidate_fee_required
+                    opportunity.candidate_fee = report.candidate_fee.strip()
+                    opportunity.compensation = report.compensation.strip()
+                    opportunity.work_arrangement = report.work_arrangement.strip()
+                    opportunity.japanese_requirement = report.japanese_requirement.strip()
+                    opportunity.posting_language = report.posting_language
+                    opportunity.posting_language_note = report.posting_language_note.strip()
+                    opportunity.japanese_only_inferred = report.japanese_only_inferred
+                    opportunity.visa_support = report.visa_support.strip()
+                    opportunity.thesis_compatibility = report.thesis_compatibility.strip()
+                    opportunity.job_description = report.role_summary.strip() or opportunity.job_description
+                    opportunity.match_score = report.match_score
+                    opportunity.fit_summary = report.fit_summary.strip()
+                    opportunity.requirements_assessment = [
+                        item.model_dump() for item in report.requirements
+                        if _is_concrete_qualification(item.requirement)
+                    ]
+                    opportunity.research_sources = safe_sources
+                    opportunity.research_summary = batch.summary.strip()
+                    opportunity.next_action = report.next_action.strip()
+                    opportunity.verified_at = timezone.now()
+                    if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
+                        opportunity.status = Opportunity.Status.QUALIFIED
+                    opportunity.save(update_fields=[
+                        "verification_status", "company_description", "company_location", "company_size",
+                        "company_country", "company_industry",
+                        "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
+                        "location", "internship_dates", "internship_start_date", "internship_end_date",
+                        "minimum_duration", "work_arrangement", "japanese_requirement",
+                        "posting_language", "posting_language_note", "japanese_only_inferred",
+                        "application_deadline_text", "deadline", "responsibilities",
+                        "what_you_would_do", "what_company_needs", "candidate_fee_required",
+                        "candidate_fee", "compensation",
+                        "visa_support", "thesis_compatibility", "job_description", "match_score",
+                        "fit_summary", "requirements_assessment", "research_sources", "research_summary",
+                        "next_action", "verified_at", "status", "updated_at",
+                    ])
+            except Exception:
+                logger.exception(
+                    "Skipped research report for opportunity %s after a save error", report.opportunity_id,
+                )
+                continue
             researched += 1
         ChatMessage.objects.create(
             scope=ChatMessage.Scope.GENERAL,
@@ -606,6 +625,7 @@ def qualify_discoveries(request):
     except AIUnavailable as error:
         messages.error(request, str(error))
     except Exception:
+        logger.exception("Qualification run failed for campaign %s", campaign.id)
         messages.error(request, "Robert’s verification run was interrupted. Existing information is safe; please try again.")
     return redirect("dashboard")
 
