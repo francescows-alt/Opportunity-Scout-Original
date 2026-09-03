@@ -416,6 +416,8 @@ def qualify_discoveries(request):
             | Q(what_company_needs="")
             | Q(candidate_fee="")
             | Q(compensation="")
+            | Q(posting_language="")
+            | Q(minimum_duration="")
         )
     opportunities = list(opportunity_query.order_by("-match_score", "-created_at")[:8])
     if not opportunities:
@@ -463,6 +465,9 @@ def qualify_discoveries(request):
             opportunity.work_culture = report.work_culture.strip()
             opportunity.location = report.internship_location.strip() or opportunity.location
             opportunity.internship_dates = report.internship_dates.strip()
+            opportunity.internship_start_date = report.internship_start_date_iso
+            opportunity.internship_end_date = report.internship_end_date_iso
+            opportunity.minimum_duration = report.minimum_duration.strip()
             opportunity.application_deadline_text = report.application_deadline.strip()
             opportunity.deadline = report.application_deadline_iso
             opportunity.responsibilities = report.responsibilities
@@ -473,6 +478,8 @@ def qualify_discoveries(request):
             opportunity.compensation = report.compensation.strip()
             opportunity.work_arrangement = report.work_arrangement.strip()
             opportunity.japanese_requirement = report.japanese_requirement.strip()
+            opportunity.posting_language = report.posting_language
+            opportunity.posting_language_note = report.posting_language_note.strip()
             opportunity.visa_support = report.visa_support.strip()
             opportunity.thesis_compatibility = report.thesis_compatibility.strip()
             opportunity.job_description = report.role_summary.strip() or opportunity.job_description
@@ -492,7 +499,9 @@ def qualify_discoveries(request):
                 "verification_status", "company_description", "company_location", "company_size",
                 "company_country", "company_industry",
                 "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
-                "location", "internship_dates", "work_arrangement", "japanese_requirement",
+                "location", "internship_dates", "internship_start_date", "internship_end_date",
+                "minimum_duration", "work_arrangement", "japanese_requirement",
+                "posting_language", "posting_language_note",
                 "application_deadline_text", "deadline", "responsibilities",
                 "what_you_would_do", "what_company_needs", "candidate_fee_required",
                 "candidate_fee", "compensation",

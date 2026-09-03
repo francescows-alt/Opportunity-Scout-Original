@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Opportunity Scout{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}?v=20260903b">
 </head>
 <body>
     <div class="app-frame">
@@ -46,7 +46,7 @@
         </form>
     </aside>
     <div id="dictation-config" data-transcription-url="{% url 'transcribe-audio' %}"></div>
-    <script src="{% static 'tracker/dictation.js' %}" defer></script>
-    <script src="{% static 'tracker/app.js' %}" defer></script>
+    <script src="{% static 'tracker/dictation.js' %}?v=20260903b" defer></script>
+    <script src="{% static 'tracker/app.js' %}?v=20260903b" defer></script>
 </body>
 </html>

@@ -243,10 +243,15 @@ class DashboardTests(TestCase):
                 "international_environment": "International customer base.",
                 "growth_outlook": "No reliable growth figures found.",
                 "work_culture": "Not established by reliable public sources.",
-                "internship_dates": "Not stated in the source", "work_arrangement": "Hybrid",
+                "internship_dates": "Feb–Jul 2027",
+                "internship_start_date_iso": "2027-02-01",
+                "internship_end_date_iso": "2027-07-31",
+                "minimum_duration": "6 months", "work_arrangement": "Hybrid",
                 "application_deadline": "Not stated in the source",
                 "application_deadline_iso": None,
                 "japanese_requirement": "Intermediate Japanese preferred",
+                "posting_language": "English",
+                "posting_language_note": "The full vacancy is written in English; this does not prove Japanese is unnecessary.",
                 "visa_support": "Not stated in the source",
                 "thesis_compatibility": "Requires confirmation",
                 "role_summary": "Supports growth research and campaigns.", "match_score": 84,
@@ -270,6 +275,9 @@ class DashboardTests(TestCase):
         opportunity.refresh_from_db()
         self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.CLARIFY)
         self.assertEqual(opportunity.japanese_requirement, "Intermediate Japanese preferred")
+        self.assertEqual(opportunity.posting_language, "English")
+        self.assertEqual(str(opportunity.internship_start_date), "2027-02-01")
+        self.assertEqual(opportunity.minimum_duration, "6 months")
         self.assertEqual(opportunity.application_deadline_text, "Not stated in the source")
         self.assertEqual(opportunity.company_country, "Japan")
         self.assertEqual(opportunity.company_industry, "B2B software")
@@ -291,6 +299,8 @@ class DashboardTests(TestCase):
         self.assertContains(report, "Official website")
         self.assertContains(report, "B2B software")
         self.assertContains(report, "Japanese")
+        self.assertContains(report, "Posting language")
+        self.assertContains(report, "1 Feb 2027")
         self.assertContains(report, "Match")
         self.assertContains(report, "Check")
         self.assertContains(report, "More about Example Japan")
@@ -300,6 +310,23 @@ class DashboardTests(TestCase):
         self.assertNotContains(report, "Robert’s verdict")
         page_html = report.content.decode()
         self.assertLess(page_html.index("back-to-list"), page_html.index("Other opportunities"))
+
+    def test_list_shows_company_research_and_expired_label(self):
+        organization = Organization.objects.create(
+            name="Archived Fintech", logo_url="https://example.com/logo.png",
+        )
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Strategy Intern",
+            company_industry="Fintech", company_size="51–200 employees",
+            posting_language="Japanese",
+            verification_status=Opportunity.VerificationStatus.EXPIRED,
+        )
+        response = self.client.get(reverse("dashboard"))
+        self.assertContains(response, "Industry")
+        self.assertContains(response, "51–200 employees")
+        self.assertContains(response, "https://example.com/logo.png")
+        self.assertContains(response, "Expired")
+        self.assertContains(response, "verification-expired")
 
     def test_serious_list_only_shows_qualified_research(self):
         organization = Organization.objects.create(name="Serious Company")

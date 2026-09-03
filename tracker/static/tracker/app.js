@@ -68,6 +68,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         function renderProgress(data) {
             progressPanel.hidden = false;
+            progressPanel.classList.remove("idle");
             progressPanel.classList.add("active");
             stageText.textContent = data.message;
             percentText.textContent = `${data.progress}%`;
