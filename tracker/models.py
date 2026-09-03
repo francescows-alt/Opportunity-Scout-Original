@@ -78,6 +78,11 @@ class CandidateProfile(models.Model):
         blank=True,
         help_text="Describe your background, interests, goals, constraints, and anything the assistant should understand.",
     )
+    linkedin_url = models.URLField(max_length=500, blank=True)
+    linkedin_source_text = models.TextField(
+        blank=True,
+        help_text="Text copied from LinkedIn. Kept as private evidence for profile comparison.",
+    )
     profile_draft = models.TextField(
         blank=True,
         help_text="A live profile draft assembled from the interview. You can edit it freely.",

@@ -4,7 +4,10 @@
 {% block content %}
 <section class="profile-heading">
     <div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">A professional working profile and CV built from your evidence, preferences, and conversations with Robert.</p></div>
-    <span class="waiting-badge">{% if ai_configured %}Robert connected{% else %}AI setup needed{% endif %}</span>
+    <div class="profile-heading-actions">
+        <button class="button secondary background-notes-open" type="button" aria-haspopup="dialog">Private background</button>
+        <span class="waiting-badge">{% if ai_configured %}Robert connected{% else %}AI setup needed{% endif %}</span>
+    </div>
 </section>
 
 {% if display_profile %}
@@ -76,7 +79,7 @@
 {% endif %}
 
 <section class="documents-wide source-material">
-    <div class="source-heading"><div><span class="step-number">＋</span><div><p class="eyebrow">Inputs, not presentation</p><h2>Everything Robert should know</h2><p>Drop formal evidence on the left and paste your unpolished personal context on the right. This material can be long and messy—it stays behind the clean professional profile.</p></div></div></div>
+    <div class="source-heading"><div><span class="step-number">＋</span><div><p class="eyebrow">Evidence sources</p><h2>Keep Robert accurate</h2><p>Add documents or LinkedIn information here. Robert compares all sources and proposes CV changes; you approve them before they become part of your profile.</p></div></div></div>
     <div class="source-grid">
         <div class="source-files">
             <form method="post" enctype="multipart/form-data" class="upload-form">
@@ -92,21 +95,34 @@
             </div>
         </div>
 
-        <form method="post" class="source-notes-form">
-            {% csrf_token %}<input type="hidden" name="action" value="save_profile">
-            <div class="source-note-intro"><strong>Your own description</strong><p>Paste who you are, what motivates you, preferences, projects, context, or anything a CV misses. It does not need professional wording.</p></div>
-            {% include "tracker/field.html" with field=profile_form.long_description %}
-            <button class="button secondary" type="submit">Save source notes</button>
+        <form method="post" class="linkedin-source-card">
+            {% csrf_token %}<input type="hidden" name="action" value="save_linkedin">
+            <div class="linkedin-card-heading"><span class="linkedin-mark">in</span><div><strong>LinkedIn comparison</strong><p>Catch experience or dates that your uploaded CV may have missed.</p></div></div>
+            {% include "tracker/field.html" with field=linkedin_form.linkedin_url %}
+            <div class="linkedin-explainer"><strong>Why paste text too?</strong><p>LinkedIn normally hides profiles from automatic readers. Copy your About and Experience sections here, or upload LinkedIn’s PDF export on the left.</p></div>
+            {% include "tracker/field.html" with field=linkedin_form.linkedin_source_text %}
+            <button class="button secondary" type="submit">Save LinkedIn source</button>
+            {% if candidate.linkedin_url %}<a class="saved-linkedin-link" href="{{ candidate.linkedin_url }}" target="_blank" rel="noopener">Open saved LinkedIn profile ↗</a>{% endif %}
         </form>
     </div>
-    {% if candidate.documents.exists %}
+    {% if candidate.documents.exists or candidate.linkedin_source_text %}
     <form method="post" class="document-analysis-action">
         {% csrf_token %}<input type="hidden" name="action" value="analyze_documents">
-        <div><strong>{% if display_profile %}Rebuild the professional profile{% else %}Build the professional profile{% endif %}</strong><p>First save any source-note changes above. Robert will combine the documents and your description, then show a new proposal for approval.</p></div>
-        <button class="button primary" type="submit">{% if display_profile %}Rebuild with Robert{% else %}Analyze with Robert{% endif %}</button>
+        <div><strong>{% if display_profile %}Compare sources and rebuild{% else %}Build the professional profile{% endif %}</strong><p>Robert will compare your CV files, LinkedIn evidence and private background. Missing experience appears in a proposal first—never directly in your accepted CV.</p></div>
+        <button class="button primary" type="submit">{% if display_profile %}Compare with Robert{% else %}Analyze with Robert{% endif %}</button>
     </form>
     {% endif %}
 </section>
+
+<dialog class="background-notes-dialog" aria-labelledby="background-notes-title">
+    <form method="dialog" class="dialog-close-row"><button type="submit" aria-label="Close private background">×</button></form>
+    <div class="private-note-heading"><span>Private</span><div><p class="eyebrow">Robert’s deeper memory</p><h2 id="background-notes-title">Full background essay</h2><p>Write everything that may help Robert understand you—ambitions, personal context, motivations, preferences and unusual experience. Robert uses it for matching and advice, but it is never displayed as your CV or sent to employers.</p></div></div>
+    <form method="post" class="private-notes-form">
+        {% csrf_token %}<input type="hidden" name="action" value="save_profile">
+        {% include "tracker/field.html" with field=profile_form.long_description %}
+        <div class="private-note-actions"><small>Stored locally; shared with Robert only when you ask for analysis or advice.</small><button class="button primary" type="submit">Save private background</button></div>
+    </form>
+</dialog>
 
 <section class="chat-panel profile-chat-wide">
     <div class="panel-heading"><div><span class="ai-avatar">R</span><div><h2>Clarify the important parts with Robert</h2><p>Robert asks only questions that materially improve matching or applications</p></div></div></div>

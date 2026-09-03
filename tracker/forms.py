@@ -74,6 +74,31 @@ class ProfileSourceNotesForm(forms.ModelForm):
         }
 
 
+class LinkedInSourceForm(forms.ModelForm):
+    class Meta:
+        model = CandidateProfile
+        fields = ["linkedin_url", "linkedin_source_text"]
+        widgets = {
+            "linkedin_url": forms.URLInput(attrs={
+                "placeholder": "https://www.linkedin.com/in/your-name/",
+                "autocomplete": "url",
+            }),
+            "linkedin_source_text": forms.Textarea(attrs={
+                "rows": 7,
+                "data-dictation": "true",
+                "placeholder": "Paste your LinkedIn About and Experience sections here…",
+            }),
+        }
+        labels = {
+            "linkedin_url": "LinkedIn profile link",
+            "linkedin_source_text": "LinkedIn profile text",
+        }
+        help_texts = {
+            "linkedin_url": "Robert stores this as your professional-profile reference.",
+            "linkedin_source_text": "LinkedIn blocks reliable automatic reading. Paste the text or upload LinkedIn's PDF export so Robert can verify every fact.",
+        }
+
+
 class MultipleFileInput(forms.ClearableFileInput):
     allow_multiple_selected = True
 

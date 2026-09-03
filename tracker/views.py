@@ -14,6 +14,7 @@ from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_con
 from .forms import (
     CampaignPromptForm,
     OpportunityForm,
+    LinkedInSourceForm,
     ProfileDocumentUploadForm,
     ProfileSourceNotesForm,
     QuickInboxForm,
@@ -197,6 +198,7 @@ def opportunity_edit(request, opportunity_id):
 def profile(request):
     candidate, _ = CandidateProfile.objects.get_or_create(pk=1)
     profile_form = ProfileSourceNotesForm(instance=candidate)
+    linkedin_form = LinkedInSourceForm(instance=candidate)
     document_form = ProfileDocumentUploadForm()
 
     if request.method == "POST" and request.POST.get("action") == "save_profile":
@@ -204,6 +206,16 @@ def profile(request):
         if profile_form.is_valid():
             profile_form.save()
             messages.success(request, "Your profile description was saved.")
+            return redirect("profile")
+
+    if request.method == "POST" and request.POST.get("action") == "save_linkedin":
+        linkedin_form = LinkedInSourceForm(request.POST, instance=candidate)
+        if linkedin_form.is_valid():
+            linkedin_form.save()
+            if candidate.linkedin_source_text.strip():
+                messages.success(request, "LinkedIn evidence was saved. Ask Robert to compare all sources below.")
+            else:
+                messages.info(request, "LinkedIn link saved. Paste its profile text or upload the LinkedIn PDF before comparison; LinkedIn blocks reliable automatic reading.")
             return redirect("profile")
 
     if request.method == "POST" and request.POST.get("action") == "upload_document":
@@ -220,13 +232,14 @@ def profile(request):
 
     if request.method == "POST" and request.POST.get("action") == "analyze_documents":
         documents = list(candidate.documents.all())
-        if not documents:
-            messages.error(request, "Upload at least one profile document before asking Robert to analyze it.")
+        if not documents and not candidate.linkedin_source_text.strip():
+            messages.error(request, "Add a document or paste LinkedIn profile text before asking Robert to compare your sources.")
             return redirect("profile")
         try:
             result = analyze_profile_documents(
                 documents,
                 "\n\n".join(filter(None, [candidate.profile_draft, candidate.long_description])),
+                candidate.linkedin_source_text,
             )
             candidate.document_profile_proposal = result.to_profile_text()
             candidate.document_structured_proposal = result.profile.model_dump()
@@ -321,6 +334,7 @@ def profile(request):
     return render(request, "tracker/profile.html", {
         "candidate": candidate,
         "profile_form": profile_form,
+        "linkedin_form": linkedin_form,
         "document_form": document_form,
         "conversation": conversation,
         "ai_configured": is_configured(),

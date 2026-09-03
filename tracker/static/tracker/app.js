@@ -15,4 +15,13 @@ document.addEventListener("DOMContentLoaded", () => {
     launcher.addEventListener("click", () => setOpen(!panel.classList.contains("open")));
     close.addEventListener("click", () => setOpen(false));
     setOpen(panel.classList.contains("open"));
+
+    const backgroundDialog = document.querySelector(".background-notes-dialog");
+    const backgroundButton = document.querySelector(".background-notes-open");
+    if (backgroundDialog && backgroundButton) {
+        backgroundButton.addEventListener("click", () => backgroundDialog.showModal());
+        backgroundDialog.addEventListener("click", (event) => {
+            if (event.target === backgroundDialog) backgroundDialog.close();
+        });
+    }
 });

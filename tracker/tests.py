@@ -111,6 +111,43 @@ class CandidateProfileTests(TestCase):
             "A long and truthful description of my background.",
         )
 
+    def test_user_can_save_linkedin_source(self):
+        response = self.client.post(reverse("profile"), {
+            "action": "save_linkedin",
+            "linkedin_url": "https://www.linkedin.com/in/example-person/",
+            "linkedin_source_text": "Experience: Example Company, Growth Intern, 2025.",
+        })
+        self.assertRedirects(response, reverse("profile"))
+        profile = CandidateProfile.objects.get(pk=1)
+        self.assertEqual(profile.linkedin_url, "https://www.linkedin.com/in/example-person/")
+        self.assertIn("Growth Intern", profile.linkedin_source_text)
+
+    def test_private_background_is_hidden_in_dialog(self):
+        response = self.client.get(reverse("profile"))
+        self.assertContains(response, "Private background")
+        self.assertContains(response, "Full background essay")
+        self.assertContains(response, "background-notes-dialog")
+
+    @patch("tracker.views.analyze_profile_documents")
+    def test_linkedin_text_can_be_analyzed_without_documents(self, analyze):
+        analyze.return_value = DocumentProfileAnalysis(
+            profile={
+                "name": "Francesco", "headline": "Business student", "summary": "Truthful summary",
+                "experience": [], "education": [], "skill_groups": [], "languages": [],
+                "looking_for": [], "not_looking_for": [], "practical_constraints": [],
+            },
+            evidence=[], important_question=None, summary="Compared the sources.",
+        )
+        profile = CandidateProfile.objects.create(
+            pk=1,
+            linkedin_source_text="Example Company — Growth Intern — 2025",
+        )
+        response = self.client.post(reverse("profile"), {"action": "analyze_documents"})
+        self.assertRedirects(response, reverse("profile"))
+        profile.refresh_from_db()
+        self.assertEqual(profile.document_analysis_status, CandidateProfile.AnalysisStatus.READY)
+        self.assertEqual(analyze.call_args.args[2], "Example Company — Growth Intern — 2025")
+
     def test_user_can_upload_profile_document(self):
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
             uploaded_file = SimpleUploadedFile("cv.pdf", b"example CV", content_type="application/pdf")
@@ -184,7 +221,7 @@ class CandidateProfileTests(TestCase):
             self.assertEqual(profile.document_structured_proposal["name"], "Francesco")
             review = self.client.get(reverse("profile"))
             self.assertContains(review, "What Francesco is looking for")
-            self.assertContains(review, "Everything Robert should know")
+            self.assertContains(review, "Keep Robert accurate")
 
             response = self.client.post(reverse("profile"), {
                 "action": "accept_document_profile",
