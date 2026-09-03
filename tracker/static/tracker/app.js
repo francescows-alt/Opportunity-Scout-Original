@@ -43,26 +43,16 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    document.querySelectorAll("[data-discovery-form]").forEach((discoveryForm) => {
-        discoveryForm.addEventListener("submit", () => {
-            const button = discoveryForm.querySelector("button[type='submit']");
-            const progress = discoveryForm.querySelector(".discovery-progress");
-            if (button) {
-                button.disabled = true;
-                button.textContent = "Robert is searching…";
-            }
-            if (progress) progress.hidden = false;
-        });
-    });
-
-    const searchForm = document.querySelector("[data-complete-search]");
+    const jobForms = Array.from(document.querySelectorAll("[data-background-job-form]"));
     const progressPanel = document.querySelector("[data-search-progress]");
-    if (searchForm && progressPanel) {
-        const button = searchForm.querySelector("button[type='submit']");
+    if (jobForms.length && progressPanel) {
         const stageText = progressPanel.querySelector("[data-search-stage]");
         const percentText = progressPanel.querySelector("[data-search-percent]");
         const bar = progressPanel.querySelector("[data-search-bar]");
-        let statusUrl = searchForm.dataset.activeStatusUrl;
+        const buttonsOf = (form) => form.querySelector("button[type='submit']");
+        const allButtons = () => jobForms.map(buttonsOf).filter(Boolean);
+        const resumeUrl = jobForms.map((form) => form.dataset.activeStatusUrl).find(Boolean);
+        let statusUrl = resumeUrl || "";
         let jobId = statusUrl?.match(/search\/(\d+)\/status/)?.[1] || "";
         let polling = false;
 
@@ -82,21 +72,19 @@ document.addEventListener("DOMContentLoaded", () => {
             });
         }
 
-        async function pollSearch() {
+        function setButtonsDisabled(disabled) {
+            allButtons().forEach((button) => { button.disabled = disabled; });
+        }
+
+        async function pollSearch(onSettled) {
             if (!statusUrl || polling) return;
             polling = true;
             try {
                 const response = await fetch(statusUrl, {headers: {"Accept": "application/json"}});
                 const data = await response.json();
                 renderProgress(data);
-                if (data.status === "complete") {
-                    button.textContent = "Research complete";
-                    window.setTimeout(() => window.location.assign(`/applications/?search_complete=${jobId}`), 1800);
-                    return;
-                }
-                if (data.status === "failed") {
-                    button.disabled = false;
-                    button.textContent = "Try search again";
+                if (data.status === "complete" || data.status === "failed") {
+                    onSettled(data.status === "complete");
                     return;
                 }
             } catch (_) {
@@ -104,38 +92,55 @@ document.addEventListener("DOMContentLoaded", () => {
             } finally {
                 polling = false;
             }
-            window.setTimeout(pollSearch, 1200);
+            window.setTimeout(() => pollSearch(onSettled), 1200);
         }
 
-        searchForm.addEventListener("submit", async (event) => {
-            event.preventDefault();
-            button.disabled = true;
-            button.textContent = "Starting Robert…";
-            progressPanel.hidden = false;
-            renderProgress({message: "Preparing a new search strategy…", progress: 3, stage: "searching", status: "running"});
-            try {
-                const response = await fetch(searchForm.action, {
-                    method: "POST",
-                    body: new FormData(searchForm),
-                    headers: {"Accept": "application/json"},
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Could not start search.");
-                statusUrl = data.status_url;
-                jobId = String(data.job_id);
-                button.textContent = "Robert is working…";
-                pollSearch();
-            } catch (error) {
-                stageText.textContent = error.message;
-                button.disabled = false;
-                button.textContent = "Try search again";
+        function onSettled(activeButton, success) {
+            setButtonsDisabled(false);
+            if (success) {
+                activeButton.textContent = "Research complete";
+                window.setTimeout(() => window.location.assign(`/applications/?search_complete=${jobId}`), 1800);
+            } else {
+                activeButton.textContent = "Try again";
             }
+        }
+
+        jobForms.forEach((form) => {
+            const button = buttonsOf(form);
+            if (!button) return;
+            const workingLabel = form.dataset.workingLabel || "Robert is working…";
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                setButtonsDisabled(true);
+                button.textContent = "Starting Robert…";
+                progressPanel.hidden = false;
+                renderProgress({message: "Preparing…", progress: 3, stage: "searching", status: "running"});
+                try {
+                    const response = await fetch(form.action, {
+                        method: "POST",
+                        body: new FormData(form),
+                        headers: {"Accept": "application/json"},
+                    });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error || "Could not start.");
+                    statusUrl = data.status_url;
+                    jobId = String(data.job_id);
+                    button.textContent = workingLabel;
+                    pollSearch((success) => onSettled(button, success));
+                } catch (error) {
+                    stageText.textContent = error.message;
+                    setButtonsDisabled(false);
+                    button.textContent = "Try again";
+                }
+            });
         });
 
         if (statusUrl) {
-            button.disabled = true;
-            button.textContent = "Robert is working…";
-            pollSearch();
+            const resumeForm = jobForms.find((form) => form.dataset.activeStatusUrl === resumeUrl);
+            const resumeButton = resumeForm ? buttonsOf(resumeForm) : allButtons()[0];
+            setButtonsDisabled(true);
+            if (resumeButton) resumeButton.textContent = (resumeForm && resumeForm.dataset.workingLabel) || "Robert is working…";
+            pollSearch((success) => onSettled(resumeButton || allButtons()[0], success));
         }
     }
 });

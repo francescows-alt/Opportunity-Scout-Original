@@ -112,6 +112,22 @@ def home(request):
     return redirect("dashboard")
 
 
+def _incomplete_research_filter():
+    """The single definition of 'needs research' shared by the dashboard count,
+    the manual retry button, and the background research runner, so they never drift."""
+    return (
+        Q(verification_status=Opportunity.VerificationStatus.PENDING)
+        | Q(company_country="")
+        | Q(company_industry="")
+        | Q(what_you_would_do="")
+        | Q(what_company_needs="")
+        | Q(candidate_fee="")
+        | Q(compensation="")
+        | Q(posting_language="")
+        | Q(minimum_duration="")
+    )
+
+
 def dashboard(request):
     opportunities = Opportunity.objects.select_related("campaign", "organization")
     query = request.GET.get("q", "").strip()
@@ -125,15 +141,7 @@ def dashboard(request):
         )
     if status:
         opportunities = opportunities.filter(status=status)
-    incomplete_research = (
-        Q(verification_status=Opportunity.VerificationStatus.PENDING)
-        | Q(company_country="")
-        | Q(company_industry="")
-        | Q(what_you_would_do="")
-        | Q(what_company_needs="")
-        | Q(candidate_fee="")
-        | Q(compensation="")
-    )
+    incomplete_research = _incomplete_research_filter()
     if review == "serious":
         opportunities = opportunities.filter(verification_status=Opportunity.VerificationStatus.QUALIFIED)
     elif review == "clarify":
@@ -185,7 +193,6 @@ def dashboard(request):
         "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
         "ai_configured": is_configured(),
         "research_needed_count": research_needed_count,
-        "research_batch_count": min(research_needed_count, 8),
         "serious_count": all_opportunities.filter(
             verification_status=Opportunity.VerificationStatus.QUALIFIED,
         ).count(),
@@ -273,14 +280,21 @@ def _run_complete_search(job_id):
         close_old_connections()
 
 
-@require_POST
-def start_complete_search(request):
+def _require_campaign_and_profile():
+    """Shared precondition check for both background job starters. Returns
+    (campaign, profile, error_response); error_response is None when both exist."""
     campaign = SearchCampaign.objects.filter(is_active=True).first()
-    profile = CandidateProfile.objects.filter(pk=1).first()
     if not campaign:
-        return JsonResponse({"error": "Create and activate a search campaign first."}, status=400)
+        return None, None, JsonResponse({"error": "Create and activate a search campaign first."}, status=400)
+    profile = CandidateProfile.objects.filter(pk=1).first()
     if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
-        return JsonResponse({"error": "Complete your profile before Robert searches."}, status=400)
+        return None, None, JsonResponse({"error": "Complete your profile before Robert searches."}, status=400)
+    return campaign, profile, None
+
+
+def _launch_background_job(campaign, runner):
+    """Reuse one active SearchJob if one is already running, otherwise start a new
+    background thread. Shared by the full search and the research-only retry."""
     stale_before = timezone.now() - timedelta(minutes=30)
     SearchJob.objects.filter(
         status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING], updated_at__lt=stale_before,
@@ -292,8 +306,75 @@ def start_complete_search(request):
     if active:
         return JsonResponse({"job_id": active.id, "status_url": reverse("search-job-status", args=[active.id])})
     job = SearchJob.objects.create(campaign=campaign)
-    Thread(target=_run_complete_search, args=(job.id,), daemon=True).start()
+    Thread(target=runner, args=(job.id,), daemon=True).start()
     return JsonResponse({"job_id": job.id, "status_url": reverse("search-job-status", args=[job.id])}, status=202)
+
+
+@require_POST
+def start_complete_search(request):
+    campaign, profile, error = _require_campaign_and_profile()
+    if error:
+        return error
+    return _launch_background_job(campaign, _run_complete_search)
+
+
+def _run_research_only(job_id):
+    """Finish deep research on every opportunity still incomplete for this campaign,
+    looping in batches of 8 until none remain — unlike a single manual retry click."""
+    from django.test import Client
+
+    close_old_connections()
+    try:
+        job = SearchJob.objects.select_related("campaign").get(pk=job_id)
+        pending_ids = list(
+            Opportunity.objects.filter(campaign=job.campaign)
+            .filter(_incomplete_research_filter())
+            .order_by("-match_score", "-created_at")
+            .values_list("id", flat=True)
+        )
+        total = len(pending_ids)
+        _update_search_job(
+            job_id, status=SearchJob.Status.RUNNING, stage="researching", progress=8,
+            message=f"Deep research: preparing {total} report{'s' if total != 1 else ''}…",
+            found_count=total, opportunity_ids=pending_ids,
+        )
+
+        client = Client(HTTP_HOST="localhost")
+        for offset in range(0, total, 8):
+            chunk = pending_ids[offset:offset + 8]
+            _update_search_job(
+                job_id, stage="researching",
+                progress=8 + round(84 * offset / max(total, 1)),
+                message=f"Deep research: {min(offset + 1, total)}–{min(offset + len(chunk), total)} of {total}…",
+            )
+            client.post(reverse("qualify-discoveries"), {"opportunity_ids": chunk})
+
+        researched = Opportunity.objects.filter(pk__in=pending_ids, verified_at__isnull=False).count()
+        _update_search_job(job_id, stage="saving", progress=95, message="Saving reports…", researched_count=researched)
+        incomplete = total - researched
+        if incomplete:
+            final_message = f"Finished with {incomplete} report{'s' if incomplete != 1 else ''} still needing retry."
+        else:
+            final_message = f"Complete: {researched} report{'s' if researched != 1 else ''} researched."
+        _update_search_job(job_id, status=SearchJob.Status.COMPLETE, stage="complete", progress=100, message=final_message)
+    except Exception as error:
+        _update_search_job(
+            job_id, status=SearchJob.Status.FAILED, stage="failed", progress=100,
+            message="Research stopped safely. Existing information was not damaged.", error=str(error)[:1000],
+        )
+    finally:
+        close_old_connections()
+
+
+@require_POST
+def start_research_only(request):
+    campaign, profile, error = _require_campaign_and_profile()
+    if error:
+        return error
+    pending_count = Opportunity.objects.filter(campaign=campaign).filter(_incomplete_research_filter()).count()
+    if not pending_count:
+        return JsonResponse({"error": "There are no discoveries waiting for research."}, status=400)
+    return _launch_background_job(campaign, _run_research_only)
 
 
 def search_job_status(request, job_id):
@@ -419,17 +500,7 @@ def qualify_discoveries(request):
     if requested_ids:
         opportunity_query = opportunity_query.filter(pk__in=requested_ids)
     else:
-        opportunity_query = opportunity_query.filter(
-            Q(verification_status=Opportunity.VerificationStatus.PENDING)
-            | Q(company_country="")
-            | Q(company_industry="")
-            | Q(what_you_would_do="")
-            | Q(what_company_needs="")
-            | Q(candidate_fee="")
-            | Q(compensation="")
-            | Q(posting_language="")
-            | Q(minimum_duration="")
-        )
+        opportunity_query = opportunity_query.filter(_incomplete_research_filter())
     opportunities = list(opportunity_query.order_by("-match_score", "-created_at")[:8])
     if not opportunities:
         messages.info(request, "There are no new discoveries waiting for research.")

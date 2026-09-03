@@ -171,6 +171,35 @@ class DashboardTests(TestCase):
         self.assertEqual(job.status, SearchJob.Status.COMPLETE)
         self.assertEqual(job.progress, 100)
 
+    def test_research_only_start_requires_pending_items(self):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        response = self.client.post(reverse("research-start"))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("no discoveries waiting", response.json()["error"])
+
+    @patch("django.test.Client")
+    def test_research_only_loops_through_all_pending_batches(self, client_class):
+        from .views import _run_research_only
+
+        organization = Organization.objects.create(name="Needs Research Co")
+        for number in range(10):
+            Opportunity.objects.create(campaign=self.campaign, organization=organization, title=f"Intern {number}")
+        job = SearchJob.objects.create(campaign=self.campaign)
+
+        def simulate_research(url, data=None):
+            chunk_ids = [int(value) for value in data["opportunity_ids"]]
+            Opportunity.objects.filter(pk__in=chunk_ids).update(verified_at=timezone.now())
+            return self.client.get(reverse("dashboard"))
+
+        client_class.return_value.post.side_effect = simulate_research
+        _run_research_only(job.id)
+        job.refresh_from_db()
+        self.assertEqual(job.status, SearchJob.Status.COMPLETE)
+        self.assertEqual(job.progress, 100)
+        self.assertEqual(client_class.return_value.post.call_count, 2)
+        self.assertEqual(Opportunity.objects.filter(verified_at__isnull=False).count(), 10)
+        self.assertNotIn("still needing retry", job.message)
+
     def test_selected_role_shows_priority_banner_and_score_tone(self):
         organization = Organization.objects.create(name="Excellent Company")
         opportunity = Opportunity.objects.create(

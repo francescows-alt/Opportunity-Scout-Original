@@ -12,8 +12,8 @@
     <div><p class="eyebrow">Autonomous discovery</p><h2>Let Robert search first</h2><p>Robert searches, verifies sources and adds possibilities. He never applies.</p></div>
     {% if active_campaign %}
     <div class="discovery-actions">
-        <form method="post" action="{% url 'search-start' %}" data-complete-search data-active-status-url="{% if active_search_job %}{% url 'search-job-status' active_search_job.id %}{% endif %}">{% csrf_token %}<button class="button primary" type="submit" {% if not ai_configured %}disabled{% endif %}>Find &amp; research internships</button></form>
-        {% if research_needed_count %}<form method="post" action="{% url 'qualify-discoveries' %}" data-discovery-form>{% csrf_token %}<button class="recovery-link" type="submit" {% if not ai_configured %}disabled{% endif %}>Retry {{ research_needed_count }} incomplete</button></form>{% endif %}
+        <form method="post" action="{% url 'search-start' %}" data-background-job-form data-active-status-url="{% if active_search_job %}{% url 'search-job-status' active_search_job.id %}{% endif %}">{% csrf_token %}<button class="button primary" type="submit" {% if not ai_configured %}disabled{% endif %}>Find &amp; research internships</button></form>
+        {% if research_needed_count %}<form method="post" action="{% url 'research-start' %}" data-background-job-form data-working-label="Finishing research…">{% csrf_token %}<button class="recovery-link" type="submit" {% if not ai_configured %}disabled{% endif %}>Retry {{ research_needed_count }} incomplete</button></form>{% endif %}
     </div>
     {% else %}<a class="button primary" href="{% url 'campaign-create' %}">Create search first</a>{% endif %}
 </section>
