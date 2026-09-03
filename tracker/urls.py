@@ -4,7 +4,9 @@ from . import views
 
 
 urlpatterns = [
-    path("", views.dashboard, name="dashboard"),
+    path("", views.home, name="home"),
+    path("applications/", views.dashboard, name="dashboard"),
+    path("inbox/", views.inbox, name="inbox"),
     path("applications/new/", views.opportunity_create, name="opportunity-create"),
     path("applications/<int:opportunity_id>/edit/", views.opportunity_edit, name="opportunity-edit"),
     path("profile/", views.profile, name="profile"),

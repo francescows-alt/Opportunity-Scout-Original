@@ -33,7 +33,9 @@ The application runs only while that terminal command is active. Press
 - Search and filter applications, with pagination for large lists
 - Track match score, status, next action, deadlines, and CV submission date
 - Save a long personal description
-- Upload profile documents locally
+- Upload several profile documents locally in one step
+- Quickly capture pasted vacancies, company ideas, links, screenshots, and PDFs
+- Hold new inputs in a job inbox until truthful AI analysis is connected
 - Keep local personal data out of Git
 
 The application does not yet search the web, call paid APIs, send messages, or

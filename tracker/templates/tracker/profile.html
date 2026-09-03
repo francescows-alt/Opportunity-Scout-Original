@@ -2,12 +2,12 @@
 
 {% block title %}My profile · Internship OS{% endblock %}
 {% block content %}
-<section class="profile-heading"><div><p class="eyebrow">Your source of truth</p><h1>My profile</h1><p class="lede">Describe yourself freely and keep supporting documents together. Files stay on this Mac.</p></div></section>
+<section class="profile-heading"><div><p class="eyebrow">Start here</p><h1>Build my profile</h1><p class="lede">Drop in what already exists, then describe yourself in your own words. This becomes the evidence base for future searches and applications.</p></div></section>
 
 <div class="profile-layout">
     <form method="post" class="form-section profile-description">
         {% csrf_token %}<input type="hidden" name="action" value="save_profile">
-        <div class="section-intro"><span class="step-number">1</span><div><h2>Tell the assistant about you</h2><p>A long, messy description is fine. Later we will extract facts and ask you to verify them.</p></div></div>
+        <div class="section-intro"><span class="step-number">2</span><div><h2>Tell the assistant about you</h2><p>Write naturally. A long, messy description is fine. AI extraction will be added next and every extracted fact will require your confirmation.</p></div></div>
         <div class="field-grid">
             {% include "tracker/field.html" with field=profile_form.full_name %}
             {% include "tracker/field.html" with field=profile_form.headline %}
@@ -17,13 +17,19 @@
     </form>
 
     <aside class="documents-panel">
-        <div class="section-intro"><span class="step-number">2</span><div><h2>My documents</h2><p>CVs, transcripts, certificates, images, and university files.</p></div></div>
+        <div class="section-intro"><span class="step-number">1</span><div><h2>Drop in your documents</h2><p>CVs, transcripts, certificates, images, and university files. Select several files at once.</p></div></div>
         <form method="post" enctype="multipart/form-data" class="upload-form">
             {% csrf_token %}<input type="hidden" name="action" value="upload_document">
             {% include "tracker/field.html" with field=document_form.label %}
-            {% include "tracker/field.html" with field=document_form.file %}
-            <button class="button primary" type="submit">Upload document</button>
-            <p class="privacy-note">PDF, Word, text, PNG, or JPG · maximum 10 MB · local only</p>
+            <label class="drop-zone">
+                <span class="drop-icon">⇧</span>
+                <strong>Choose files</strong>
+                <small>or drag them onto this box</small>
+                {{ document_form.files }}
+            </label>
+            {% for error in document_form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+            <button class="button primary" type="submit">Add to my profile</button>
+            <p class="privacy-note">PDF, Word, text, PNG, JPG, or WEBP · 10 MB each · local only</p>
         </form>
         <div class="document-list">
             {% for document in candidate.documents.all %}
@@ -32,6 +38,7 @@
                 <div class="document-empty">No documents uploaded yet.</div>
             {% endfor %}
         </div>
+        <a class="button secondary continue-button" href="{% url 'inbox' %}">Continue to job inbox →</a>
     </aside>
 </div>
 {% endblock %}

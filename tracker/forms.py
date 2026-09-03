@@ -1,7 +1,7 @@
 from django import forms
 from django.core.validators import FileExtensionValidator
 
-from .models import CandidateProfile, Opportunity, Organization, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, InboxAttachment, InboxItem, Opportunity, Organization, SearchCampaign
 
 
 class SearchCampaignForm(forms.ModelForm):
@@ -42,20 +42,80 @@ class CandidateProfileForm(forms.ModelForm):
         widgets = {"long_description": forms.Textarea(attrs={"rows": 16})}
 
 
-class ProfileDocumentForm(forms.ModelForm):
-    file = forms.FileField(
-        validators=[FileExtensionValidator(["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg"])]
+class MultipleFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    widget = MultipleFileInput
+
+    def clean(self, data, initial=None):
+        if not data and not self.required:
+            return []
+        clean_one = super().clean
+        if isinstance(data, (list, tuple)):
+            return [clean_one(item, initial) for item in data]
+        return [clean_one(data, initial)]
+
+
+ALLOWED_DOCUMENT_TYPES = ["pdf", "doc", "docx", "txt", "png", "jpg", "jpeg", "webp"]
+
+
+class ProfileDocumentUploadForm(forms.Form):
+    label = forms.CharField(
+        max_length=120,
+        required=False,
+        help_text="Optional group label, such as CV or University documents.",
+    )
+    files = MultipleFileField(
+        validators=[FileExtensionValidator(ALLOWED_DOCUMENT_TYPES)],
+        help_text="Select one or several files.",
+    )
+
+    def clean_files(self):
+        files = self.cleaned_data["files"]
+        if any(uploaded_file.size > 10 * 1024 * 1024 for uploaded_file in files):
+            raise forms.ValidationError("Each file must be smaller than 10 MB.")
+        if sum(uploaded_file.size for uploaded_file in files) > 30 * 1024 * 1024:
+            raise forms.ValidationError("The combined upload must be smaller than 30 MB.")
+        return files
+
+
+class QuickInboxForm(forms.ModelForm):
+    files = MultipleFileField(
+        required=False,
+        validators=[FileExtensionValidator(ALLOWED_DOCUMENT_TYPES)],
+        help_text="Screenshots, PDFs, Word documents, or text files.",
     )
 
     class Meta:
-        model = ProfileDocument
-        fields = ["label", "file"]
+        model = InboxItem
+        fields = ["campaign", "request_type", "content", "source_url"]
+        widgets = {
+            "content": forms.Textarea(attrs={
+                "rows": 10,
+                "placeholder": "Paste a vacancy, describe a company, or write what you want researched…",
+            }),
+        }
 
-    def clean_file(self):
-        uploaded_file = self.cleaned_data["file"]
-        if uploaded_file.size > 10 * 1024 * 1024:
-            raise forms.ValidationError("Please upload a file smaller than 10 MB.")
-        return uploaded_file
+    def clean_files(self):
+        files = self.cleaned_data.get("files", [])
+        if any(uploaded_file.size > 10 * 1024 * 1024 for uploaded_file in files):
+            raise forms.ValidationError("Each file must be smaller than 10 MB.")
+        return files
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not cleaned_data.get("content") and not cleaned_data.get("source_url") and not cleaned_data.get("files"):
+            raise forms.ValidationError("Paste text, add a link, or upload at least one file.")
+        return cleaned_data
+
+    def save(self, commit=True):
+        item = super().save(commit=commit)
+        if commit:
+            for uploaded_file in self.cleaned_data.get("files", []):
+                InboxAttachment.objects.create(item=item, file=uploaded_file)
+        return item
 
 
 class OpportunityForm(forms.ModelForm):

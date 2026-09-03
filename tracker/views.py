@@ -1,10 +1,22 @@
+from pathlib import Path
+
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .forms import CandidateProfileForm, OpportunityForm, ProfileDocumentForm, SearchCampaignForm
-from .models import CandidateProfile, Opportunity, SearchCampaign
+from .forms import (
+    CandidateProfileForm,
+    OpportunityForm,
+    ProfileDocumentUploadForm,
+    QuickInboxForm,
+    SearchCampaignForm,
+)
+from .models import CandidateProfile, InboxItem, Opportunity, ProfileDocument, SearchCampaign
+
+
+def home(request):
+    return redirect("profile")
 
 
 def dashboard(request):
@@ -100,7 +112,7 @@ def opportunity_edit(request, opportunity_id):
 def profile(request):
     candidate, _ = CandidateProfile.objects.get_or_create(pk=1)
     profile_form = CandidateProfileForm(instance=candidate)
-    document_form = ProfileDocumentForm()
+    document_form = ProfileDocumentUploadForm()
 
     if request.method == "POST" and request.POST.get("action") == "save_profile":
         profile_form = CandidateProfileForm(request.POST, instance=candidate)
@@ -110,16 +122,38 @@ def profile(request):
             return redirect("profile")
 
     if request.method == "POST" and request.POST.get("action") == "upload_document":
-        document_form = ProfileDocumentForm(request.POST, request.FILES)
+        document_form = ProfileDocumentUploadForm(request.POST, request.FILES)
         if document_form.is_valid():
-            document = document_form.save(commit=False)
-            document.profile = candidate
-            document.save()
-            messages.success(request, f'"{document.label}" was uploaded locally.')
+            group_label = document_form.cleaned_data.get("label", "").strip()
+            files = document_form.cleaned_data["files"]
+            for uploaded_file in files:
+                file_label = Path(uploaded_file.name).stem.replace("_", " ").replace("-", " ").title()
+                label = f"{group_label}: {file_label}" if group_label else file_label
+                ProfileDocument.objects.create(profile=candidate, label=label, file=uploaded_file)
+            messages.success(request, f"{len(files)} document(s) uploaded locally.")
             return redirect("profile")
 
     return render(request, "tracker/profile.html", {
         "candidate": candidate,
         "profile_form": profile_form,
         "document_form": document_form,
+    })
+
+
+def inbox(request):
+    if not SearchCampaign.objects.exists():
+        messages.info(request, "Create a search campaign before adding opportunities.")
+        return redirect("campaign-create")
+
+    initial_campaign = SearchCampaign.objects.filter(is_active=True).first()
+    form = QuickInboxForm(request.POST or None, request.FILES or None, initial={"campaign": initial_campaign})
+    if request.method == "POST" and form.is_valid():
+        form.save()
+        messages.success(request, "Saved to the inbox. It is waiting for AI analysis; nothing was invented or submitted.")
+        return redirect("inbox")
+
+    return render(request, "tracker/inbox.html", {
+        "form": form,
+        "items": InboxItem.objects.select_related("campaign", "opportunity").prefetch_related("attachments")[:50],
+        "waiting_count": InboxItem.objects.filter(status=InboxItem.Status.WAITING).count(),
     })

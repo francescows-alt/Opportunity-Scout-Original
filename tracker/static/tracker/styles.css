@@ -130,6 +130,38 @@ dd { margin: 0; }
 .document-list a:hover { border-color: var(--green); background: var(--mint); }
 .document-list small { color: var(--muted); }
 .document-empty { border-radius: 0.75rem; background: #f6f7fa; padding: 1rem; color: var(--muted); text-align: center; }
+.drop-zone { position: relative; display: grid; min-height: 11rem; place-items: center; align-content: center; gap: 0.35rem; overflow: hidden; border: 2px dashed #b9bfe0; border-radius: 1rem; background: #f8f8ff; color: var(--green); cursor: pointer; text-align: center; }
+.drop-zone:hover { border-color: var(--green); background: var(--mint); }
+.drop-zone input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.drop-zone small { color: var(--muted); }
+.drop-icon { font-size: 1.8rem; }
+.continue-button { width: 100%; margin-top: 1rem; }
+.waiting-badge { border-radius: 999px; background: #fff4db; color: #8b5a00; padding: 0.55rem 0.9rem; font-size: 0.85rem; font-weight: 750; }
+.inbox-composer, .inbox-list { border: 1px solid var(--line); border-radius: 1rem; background: white; box-shadow: var(--shadow); }
+.inbox-composer { margin-bottom: 1rem; padding: 1.25rem; }
+.ai-state { display: flex; gap: 0.8rem; align-items: center; margin-bottom: 1.2rem; border-radius: 0.8rem; background: #f7f7ff; padding: 0.9rem; }
+.ai-state > span { display: grid; flex: 0 0 2.4rem; height: 2.4rem; place-items: center; border-radius: 0.65rem; background: var(--green); color: white; font-size: 0.78rem; font-weight: 800; }
+.ai-state p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+.quick-form { display: grid; gap: 1rem; }
+.quick-top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.prompt-box textarea { width: 100%; resize: vertical; border: 1px solid #cdd2dc; border-radius: 0.9rem; padding: 1rem; color: var(--ink); font: inherit; }
+.prompt-box textarea:focus { outline: 3px solid rgba(92, 85, 220, 0.14); border-color: var(--green); }
+.quick-source { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 1rem; }
+.attachment-button { position: relative; display: inline-flex; min-height: 3rem; align-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 0.75rem; background: white; padding: 0.7rem 0.9rem; color: var(--green); font-weight: 700; cursor: pointer; }
+.attachment-button:hover { background: var(--mint); }
+.attachment-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.quick-actions { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.advanced-link { color: var(--muted); font-size: 0.82rem; }
+.inbox-list { overflow: hidden; }
+.inbox-list-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem; }
+.inbox-list-heading h2, .inbox-list-heading p { margin: 0; }
+.inbox-list-heading p { color: var(--muted); font-size: 0.82rem; }
+.inbox-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, auto) auto; align-items: center; gap: 1rem; border-top: 1px solid var(--line); padding: 1rem; }
+.inbox-item-main { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+.inbox-item-main strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-item-main small { color: var(--muted); }
+.type-pill { border-radius: 999px; background: var(--mint); padding: 0.2rem 0.55rem; color: var(--green); font-size: 0.7rem; font-weight: 750; }
+.inbox-files { display: flex; flex-direction: column; color: var(--muted); font-size: 0.75rem; }
 
 @media (max-width: 720px) {
     .hero, .form-heading { align-items: stretch; flex-direction: column; }
@@ -147,4 +179,7 @@ dd { margin: 0; }
     .application-row { grid-template-columns: 1fr auto; }
     .application-row > :last-child { grid-column: 1 / -1; }
     .profile-layout { grid-template-columns: 1fr; }
+    .quick-top-row, .quick-source { grid-template-columns: 1fr; }
+    .quick-actions { align-items: stretch; flex-direction: column-reverse; }
+    .inbox-item { grid-template-columns: 1fr; }
 }

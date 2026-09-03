@@ -6,7 +6,7 @@ from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
-from .models import CandidateProfile, Opportunity, ProfileDocument, SearchCampaign
+from .models import CandidateProfile, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
 
 
 class SearchCampaignTests(TestCase):
@@ -96,6 +96,10 @@ class DashboardTests(TestCase):
 
 
 class CandidateProfileTests(TestCase):
+    def test_home_starts_at_profile(self):
+        response = self.client.get(reverse("home"))
+        self.assertRedirects(response, reverse("profile"))
+
     def test_user_can_save_long_description(self):
         response = self.client.post(reverse("profile"), {
             "action": "save_profile",
@@ -112,7 +116,42 @@ class CandidateProfileTests(TestCase):
             response = self.client.post(reverse("profile"), {
                 "action": "upload_document",
                 "label": "Current CV",
-                "file": uploaded_file,
+                "files": uploaded_file,
             })
             self.assertRedirects(response, reverse("profile"))
-            self.assertEqual(ProfileDocument.objects.get().label, "Current CV")
+            self.assertTrue(ProfileDocument.objects.get().label.startswith("Current CV"))
+
+
+class InboxTests(TestCase):
+    def setUp(self):
+        self.campaign = SearchCampaign.objects.create(name="Japan 2027", goal="Internship")
+
+    def test_user_can_save_pasted_opportunity(self):
+        response = self.client.post(reverse("inbox"), {
+            "campaign": self.campaign.id,
+            "request_type": InboxItem.RequestType.JOB,
+            "content": "Marketing internship in Tokyo with an international company.",
+        })
+        self.assertRedirects(response, reverse("inbox"))
+        item = InboxItem.objects.get()
+        self.assertEqual(item.status, InboxItem.Status.WAITING)
+
+    def test_inbox_requires_text_link_or_file(self):
+        response = self.client.post(reverse("inbox"), {
+            "campaign": self.campaign.id,
+            "request_type": InboxItem.RequestType.UNKNOWN,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Paste text, add a link, or upload at least one file.")
+        self.assertFalse(InboxItem.objects.exists())
+
+    def test_user_can_upload_opportunity_screenshot(self):
+        with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            screenshot = SimpleUploadedFile("job.png", b"fake screenshot bytes", content_type="image/png")
+            response = self.client.post(reverse("inbox"), {
+                "campaign": self.campaign.id,
+                "request_type": InboxItem.RequestType.JOB,
+                "files": screenshot,
+            })
+            self.assertRedirects(response, reverse("inbox"))
+            self.assertEqual(InboxAttachment.objects.count(), 1)

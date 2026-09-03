@@ -6,7 +6,7 @@
         <h1>Applications</h1>
         <p class="lede">{% now "l, j F" %}{% if active_campaign %} · {{ active_campaign.name }}{% endif %}</p>
     </div>
-    <a class="button primary add-button" href="{% url 'opportunity-create' %}">＋<span>Add job</span></a>
+    <a class="button primary add-button" href="{% url 'inbox' %}">＋<span>Quick add</span></a>
 </section>
 
 <section class="stats-grid" aria-label="Application totals">
@@ -61,7 +61,7 @@
 <section class="empty-state">
     <div class="empty-icon">◎</div><h2>No applications yet</h2>
     <p>Add a vacancy you found or a company you may want to contact.</p>
-    <a class="button primary" href="{% url 'opportunity-create' %}">Add your first job</a>
+    <a class="button primary" href="{% url 'inbox' %}">Open the job inbox</a>
 </section>
 {% endif %}
 {% endblock %}

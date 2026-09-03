@@ -134,3 +134,39 @@ class Opportunity(models.Model):
 
     def __str__(self):
         return f"{self.organization.name} — {self.title}"
+
+
+class InboxItem(models.Model):
+    class RequestType(models.TextChoices):
+        JOB = "job", "Job or internship"
+        COMPANY = "company", "Company to research"
+        UNKNOWN = "unknown", "Let the assistant decide"
+
+    class Status(models.TextChoices):
+        WAITING = "waiting", "Waiting for AI analysis"
+        PROCESSED = "processed", "Added to applications"
+        NEEDS_INPUT = "needs_input", "Needs more information"
+
+    campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="inbox_items")
+    request_type = models.CharField(max_length=16, choices=RequestType.choices, default=RequestType.UNKNOWN)
+    content = models.TextField(blank=True)
+    source_url = models.URLField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.WAITING, db_index=True)
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.SET_NULL, blank=True, null=True, related_name="inbox_sources")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Inbox item {self.pk or 'new'}"
+
+
+class InboxAttachment(models.Model):
+    item = models.ForeignKey(InboxItem, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="job_inbox/%Y/%m/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.file.name

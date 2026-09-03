@@ -1,0 +1,51 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}Job inbox · Internship OS{% endblock %}
+{% block content %}
+<section class="dashboard-heading">
+    <div><p class="eyebrow">Fast capture</p><h1>Job inbox</h1><p class="lede">Paste or upload what you found. Detailed typing is not required.</p></div>
+    <span class="waiting-badge">{{ waiting_count }} waiting</span>
+</section>
+
+<section class="inbox-composer">
+    <div class="ai-state"><span>AI</span><div><strong>Analysis is not connected yet</strong><p>Your inputs will be saved safely for the next milestone. Nothing will be guessed or submitted.</p></div></div>
+    <form method="post" enctype="multipart/form-data" class="quick-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="quick-top-row">
+            {% include "tracker/field.html" with field=form.campaign %}
+            {% include "tracker/field.html" with field=form.request_type %}
+        </div>
+        <div class="prompt-box">{{ form.content }}</div>
+        {% for error in form.content.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+        <div class="quick-source">
+            <div>{% include "tracker/field.html" with field=form.source_url %}</div>
+            <label class="attachment-button">▧ Add screenshots or files {{ form.files }}</label>
+        </div>
+        {% for error in form.files.errors %}<p class="error-text">{{ error }}</p>{% endfor %}
+        <div class="quick-actions">
+            <a class="advanced-link" href="{% url 'opportunity-create' %}">Advanced manual correction</a>
+            <button class="button primary" type="submit">Save for AI analysis</button>
+        </div>
+    </form>
+</section>
+
+<section class="inbox-list">
+    <div class="inbox-list-heading"><h2>Waiting for analysis</h2><p>Most recent 50 inputs</p></div>
+    {% for item in items %}
+    <article class="inbox-item">
+        <div class="inbox-item-main">
+            <span class="type-pill">{{ item.get_request_type_display }}</span>
+            <strong>{% if item.content %}{{ item.content|truncatewords:18 }}{% elif item.source_url %}{{ item.source_url|truncatechars:80 }}{% else %}Uploaded files{% endif %}</strong>
+            <small>{{ item.campaign.name }} · {{ item.created_at|date:"j M Y, H:i" }}</small>
+        </div>
+        <div class="inbox-files">
+            {% for attachment in item.attachments.all %}<span>▧ {{ attachment.file.name|cut:"job_inbox/"|truncatechars:30 }}</span>{% endfor %}
+        </div>
+        <em class="status-pill">{{ item.get_status_display }}</em>
+    </article>
+    {% empty %}
+    <div class="document-empty">Your inbox is empty. Paste a vacancy or upload a screenshot above.</div>
+    {% endfor %}
+</section>
+{% endblock %}
