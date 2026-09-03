@@ -134,6 +134,7 @@ class DashboardTests(TestCase):
                 "opportunity_id": opportunity.id, "verdict": "clarify",
                 "company_description": "An international technology company serving Japan.",
                 "company_location": "Tokyo, Japan", "company_size": "Small company",
+                "company_country": "Japan", "company_industry": "B2B software",
                 "company_website": "https://example.com/", "internship_location": "Tokyo, Japan",
                 "company_reputation": "Known in its specialist market.",
                 "cv_value": "Provides relevant international growth evidence.",
@@ -163,6 +164,8 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.CLARIFY)
         self.assertEqual(opportunity.japanese_requirement, "Intermediate Japanese preferred")
         self.assertEqual(opportunity.application_deadline_text, "Not stated in the source")
+        self.assertEqual(opportunity.company_country, "Japan")
+        self.assertEqual(opportunity.company_industry, "B2B software")
         self.assertEqual(opportunity.responsibilities[0], "Research customers")
         self.assertEqual(opportunity.requirements_assessment[0]["status"], "have")
         self.assertEqual(len(opportunity.requirements_assessment), 2)
@@ -170,18 +173,21 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.research_sources[0]["title"], "Official role")
         self.assertIsNotNone(opportunity.verified_at)
 
+        list_only = self.client.get(reverse("dashboard"))
+        self.assertNotContains(list_only, "Application page")
+
         report = self.client.get(reverse("dashboard"), {"selected": opportunity.id})
-        self.assertContains(report, "Selected opportunity")
+        self.assertContains(report, "All applications")
         self.assertContains(report, "Application page")
         self.assertContains(report, "Official website")
+        self.assertContains(report, "B2B software")
         self.assertContains(report, "Japanese")
         self.assertContains(report, "Match")
         self.assertContains(report, "Check")
-        self.assertContains(report, "Concrete requirements only")
         self.assertContains(report, "More about Example Japan")
-        self.assertContains(report, "Main responsibilities")
+        self.assertContains(report, "Responsibilities")
         page_html = report.content.decode()
-        self.assertLess(page_html.index("Selected opportunity"), page_html.index("Other opportunities"))
+        self.assertLess(page_html.index("back-to-list"), page_html.index("Other applications"))
 
     def test_serious_list_only_shows_qualified_research(self):
         organization = Organization.objects.create(name="Serious Company")

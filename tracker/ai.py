@@ -136,6 +136,8 @@ class OpportunityResearch(BaseModel):
     company_description: str = Field(max_length=1000)
     company_location: str = Field(max_length=200)
     company_size: str = Field(max_length=120)
+    company_country: str = Field(max_length=120)
+    company_industry: str = Field(max_length=160)
     company_website: str = Field(max_length=500)
     company_reputation: str = Field(max_length=600)
     cv_value: str = Field(max_length=600)
@@ -155,7 +157,7 @@ class OpportunityResearch(BaseModel):
     fit_summary: str = Field(max_length=1400)
     requirements: list[RequirementAssessment] = Field(max_length=8)
     sources: list[ResearchSource] = Field(max_length=8)
-    next_action: str = Field(max_length=240)
+    next_action: str = Field(max_length=160)
 
 
 class OpportunityResearchBatch(BaseModel):
@@ -361,7 +363,7 @@ Act as a rigorous job-verification and candidate-fit analyst. Open and investiga
 Return one report for every supplied opportunity_id. Prefer the vacancy page, official company website and official careers or immigration information. Every report must contain the useful source URLs you actually consulted.
 Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; expired when a trustworthy source shows it is closed or past its deadline; unverified when the role/page cannot be verified.
 Never interpret missing information as a negative fact. Use clear phrases such as "Not stated in the source" for unknown dates, visa support, work arrangement, thesis compatibility or Japanese level.
-Build a concise company description, company location, approximate size only when sourced, reputation, CV value, international environment, growth outlook, work culture, role summary, responsibilities, application deadline, and practical facts. Do not produce promotional filler. Reputation and work-culture claims require evidence; otherwise say they are not established by reliable public sources.
+Build a concise company description, headquarters country, industry or niche, company location, approximate size only when sourced, reputation, CV value, international environment, growth outlook, work culture, role summary, responsibilities, application deadline, and practical facts. Do not produce promotional filler. For company_country, return only the headquarters country or "Not verified". For company_industry, return a specific short label such as "Fintech" or "B2B SaaS". Reputation and work-culture claims require evidence; otherwise say they are not established by reliable public sources.
 Write for scanning, not storytelling. Keep company_description and role_summary to at most two short sentences. Keep responsibilities as short verb-led bullets.
 Practical fields must be bare factual answers, normally 2–10 words: internship_dates such as "Feb–Jun 2027" or "Not stated"; application_deadline such as "15 Nov 2026" or "Not stated"; work_arrangement such as "Hybrid"; japanese_requirement such as "Native required", "Intermediate preferred", or "Not stated"; visa_support such as "Provided", "Not provided", or "Not stated"; thesis_compatibility such as "Confirmed", "Possible—ask employer", or "Not stated". Do not put explanations into these fields.
 Extract no more than eight concrete, decision-relevant qualifications and compare each with the VERIFIED candidate profile. Useful qualifications include degree or student status, language level, specific experience, named software, availability, location or work authorization, a portfolio, and specific industry knowledge.
@@ -369,6 +371,7 @@ Omit generic employer filler and personality adjectives such as proactive, motiv
 Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Keep the requirement and evidence to one short line each. Put nuance in fit_summary, not here.
 Do not penalize soft preferences as if they were hard rules. Native Japanese requirements, incompatible dates and inability to satisfy graduation/thesis requirements are material concerns when explicitly verified.
 Recalculate match_score conservatively after research. Provide a practical next action. Never apply, contact anyone, or invent facts.
+Write next_action as one direct instruction of three to eight words.
 """,
         input=(
             f"Today is {timezone.localdate().isoformat()}.\n"

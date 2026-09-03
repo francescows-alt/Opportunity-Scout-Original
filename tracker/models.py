@@ -205,6 +205,8 @@ class Opportunity(models.Model):
     company_description = models.TextField(blank=True)
     company_location = models.CharField(max_length=200, blank=True)
     company_size = models.CharField(max_length=120, blank=True)
+    company_country = models.CharField(max_length=120, blank=True)
+    company_industry = models.CharField(max_length=160, blank=True)
     company_reputation = models.TextField(blank=True)
     cv_value = models.TextField(blank=True)
     international_environment = models.TextField(blank=True)

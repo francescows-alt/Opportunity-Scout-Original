@@ -74,8 +74,6 @@ def dashboard(request):
     selected_id = request.GET.get("selected")
     if selected_id:
         selected = opportunities.filter(id=selected_id).first()
-    if selected is None and page.object_list:
-        selected = page.object_list[0]
 
     all_opportunities = Opportunity.objects.all()
     research_needed_count = all_opportunities.filter(
@@ -218,6 +216,8 @@ def qualify_discoveries(request):
             opportunity.company_description = report.company_description.strip()
             opportunity.company_location = report.company_location.strip()
             opportunity.company_size = report.company_size.strip()
+            opportunity.company_country = report.company_country.strip()
+            opportunity.company_industry = report.company_industry.strip()
             opportunity.company_reputation = report.company_reputation.strip()
             opportunity.cv_value = report.cv_value.strip()
             opportunity.international_environment = report.international_environment.strip()
@@ -246,6 +246,7 @@ def qualify_discoveries(request):
                 opportunity.status = Opportunity.Status.QUALIFIED
             opportunity.save(update_fields=[
                 "verification_status", "company_description", "company_location", "company_size",
+                "company_country", "company_industry",
                 "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
                 "location", "internship_dates", "work_arrangement", "japanese_requirement",
                 "application_deadline_text", "responsibilities",
