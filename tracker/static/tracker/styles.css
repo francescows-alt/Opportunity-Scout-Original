@@ -25,7 +25,6 @@ body {
 }
 
 a { color: inherit; }
-.icon { display: block; flex-shrink: 0; }
 .app-frame { width: min(1180px, calc(100% - 2rem)); margin: 1rem auto; overflow: hidden; border: 1px solid var(--line); border-radius: 1.25rem; background: white; box-shadow: 0 20px 60px rgba(38, 48, 75, 0.08); }
 .site-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.4rem 0.7rem; background: white; }
 .brand { display: flex; align-items: center; gap: 0.7rem; font-weight: 750; text-decoration: none; }
