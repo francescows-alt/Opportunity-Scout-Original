@@ -168,12 +168,16 @@ class DashboardTests(TestCase):
         self.assertIsNotNone(opportunity.verified_at)
 
         report = self.client.get(reverse("dashboard"), {"selected": opportunity.id})
-        self.assertContains(report, "Company snapshot")
-        self.assertContains(report, "Japanese required")
+        self.assertContains(report, "Selected opportunity")
+        self.assertContains(report, "Application page")
+        self.assertContains(report, "Official website")
+        self.assertContains(report, "Japanese")
         self.assertContains(report, "You have it")
         self.assertContains(report, "You don’t have it")
-        self.assertContains(report, "Company intelligence")
+        self.assertContains(report, "More about Example Japan")
         self.assertContains(report, "Main responsibilities")
+        page_html = report.content.decode()
+        self.assertLess(page_html.index("Selected opportunity"), page_html.index("Other opportunities"))
 
     def test_serious_list_only_shows_qualified_research(self):
         organization = Organization.objects.create(name="Serious Company")
