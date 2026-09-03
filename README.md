@@ -36,14 +36,16 @@ The application runs only while that terminal command is active. Press
 - Talk with Robert in a profile interview that maintains an editable live draft
 - Upload several profile documents locally in one step
 - Quickly capture pasted vacancies, company ideas, links, screenshots, and PDFs
-- Hold new inputs in a job inbox until truthful AI analysis is connected
+- Analyze job-inbox material and run source-backed web research with Robert
+- Run complete search cycles with visible progress, duplicate and fee checks
+- Research vacancy language, timing, company facts, qualifications, and fit
 - Build campaigns conversationally with Robert, then edit every setting manually
 - Ask Robert for hiring advice from anywhere in the app
 - Record reliable dictation and transcribe it into important text areas
 - Keep local personal data out of Git
 
-The application does not yet run automatic web searches, process the job inbox,
-send messages, or submit applications.
+The application does not send messages or submit applications. Searches begin
+only when the user starts them; future scheduling and email sync are not built yet.
 
 ## One-time AI setup
 
