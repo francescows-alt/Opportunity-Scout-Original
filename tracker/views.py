@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, research_internships, robert_reply, transcribe
+from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, robert_reply, transcribe
 
 from .forms import (
     CampaignPromptForm,
@@ -65,6 +65,9 @@ def dashboard(request):
         ).count(),
         "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
         "ai_configured": is_configured(),
+        "research_needed_count": all_opportunities.filter(
+            verification_status=Opportunity.VerificationStatus.PENDING,
+        ).count(),
     }
     return render(request, "tracker/dashboard.html", context)
 
@@ -106,6 +109,8 @@ def discover_internships(request):
                 "match_score": item.match_score,
                 "fit_summary": fit_summary,
                 "next_action": item.next_action.strip(),
+                "verification_status": Opportunity.VerificationStatus.PENDING,
+                "verified_at": None,
             }
             if opportunity:
                 for field, value in values.items():
@@ -130,6 +135,87 @@ def discover_internships(request):
         messages.error(request, str(error))
     except Exception:
         messages.error(request, "Robert’s web search was interrupted. Nothing was added incorrectly; please try again.")
+    return redirect("dashboard")
+
+
+@require_POST
+def qualify_discoveries(request):
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    if not campaign:
+        messages.error(request, "Create and activate a search campaign before Robert researches discoveries.")
+        return redirect("campaign-list")
+    profile = CandidateProfile.objects.filter(pk=1).first()
+    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
+        messages.error(request, "Finish a basic profile first so Robert can compare qualifications truthfully.")
+        return redirect("profile")
+    opportunities = list(
+        Opportunity.objects.select_related("organization")
+        .filter(campaign=campaign, verification_status=Opportunity.VerificationStatus.PENDING)
+        .order_by("-match_score", "-created_at")[:8]
+    )
+    if not opportunities:
+        messages.info(request, "There are no new discoveries waiting for research.")
+        return redirect("dashboard")
+
+    opportunity_map = {item.id: item for item in opportunities}
+    try:
+        batch = qualify_opportunities(campaign, profile, opportunities)
+        researched = 0
+        for report in batch.reports:
+            opportunity = opportunity_map.get(report.opportunity_id)
+            if opportunity is None:
+                continue
+            website = report.company_website.strip()
+            parsed_website = urlparse(website)
+            if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
+                opportunity.organization.website = website
+            if report.company_location.strip():
+                opportunity.organization.location = report.company_location.strip()
+            opportunity.organization.save(update_fields=["website", "location", "updated_at"])
+
+            safe_sources = []
+            for source in report.sources:
+                parsed_source = urlparse(source.url.strip())
+                if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
+                    safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
+            opportunity.verification_status = report.verdict
+            opportunity.company_description = report.company_description.strip()
+            opportunity.company_location = report.company_location.strip()
+            opportunity.company_size = report.company_size.strip()
+            opportunity.location = report.internship_location.strip() or opportunity.location
+            opportunity.internship_dates = report.internship_dates.strip()
+            opportunity.work_arrangement = report.work_arrangement.strip()
+            opportunity.japanese_requirement = report.japanese_requirement.strip()
+            opportunity.visa_support = report.visa_support.strip()
+            opportunity.thesis_compatibility = report.thesis_compatibility.strip()
+            opportunity.job_description = report.role_summary.strip() or opportunity.job_description
+            opportunity.match_score = report.match_score
+            opportunity.fit_summary = report.fit_summary.strip()
+            opportunity.requirements_assessment = [item.model_dump() for item in report.requirements]
+            opportunity.research_sources = safe_sources
+            opportunity.research_summary = batch.summary.strip()
+            opportunity.next_action = report.next_action.strip()
+            opportunity.verified_at = timezone.now()
+            if report.verdict == Opportunity.VerificationStatus.QUALIFIED:
+                opportunity.status = Opportunity.Status.QUALIFIED
+            opportunity.save(update_fields=[
+                "verification_status", "company_description", "company_location", "company_size",
+                "location", "internship_dates", "work_arrangement", "japanese_requirement",
+                "visa_support", "thesis_compatibility", "job_description", "match_score",
+                "fit_summary", "requirements_assessment", "research_sources", "research_summary",
+                "next_action", "verified_at", "status", "updated_at",
+            ])
+            researched += 1
+        ChatMessage.objects.create(
+            scope=ChatMessage.Scope.GENERAL,
+            role=ChatMessage.Role.ASSISTANT,
+            content=f"I deeply researched {researched} discoveries. {batch.summary} I did not apply or contact anyone.",
+        )
+        messages.success(request, f"Robert finished researching {researched} opportunities. Open any row to see its practical report.")
+    except AIUnavailable as error:
+        messages.error(request, str(error))
+    except Exception:
+        messages.error(request, "Robert’s verification run was interrupted. Existing information is safe; please try again.")
     return redirect("dashboard")
 
 

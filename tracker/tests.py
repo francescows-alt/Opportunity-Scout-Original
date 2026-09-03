@@ -6,8 +6,8 @@ from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
 
-from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch
-from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, ProfileDocument, SearchCampaign
+from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch, OpportunityResearchBatch
+from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign
 
 
 @override_settings(OPENAI_API_KEY="")
@@ -95,7 +95,7 @@ class DashboardTests(TestCase):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         response = self.client.get(reverse("dashboard"))
         self.assertContains(response, "Let Robert search first")
-        self.assertContains(response, "Find internships now")
+        self.assertContains(response, "Find internships")
 
     @patch("tracker.views.research_internships")
     def test_robert_discovery_adds_source_backed_opportunity(self, research):
@@ -119,6 +119,50 @@ class DashboardTests(TestCase):
         self.assertEqual(opportunity.match_score, 82)
         self.assertIn("Unknown: Visa support", opportunity.fit_summary)
         self.assertEqual(opportunity.status, Opportunity.Status.DISCOVERED)
+
+    @patch("tracker.views.qualify_opportunities")
+    def test_robert_qualification_builds_practical_report(self, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student with marketing experience")
+        organization = Organization.objects.create(name="Example Japan")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            source_url="https://example.com/jobs/growth-intern", match_score=70,
+        )
+        qualify.return_value = OpportunityResearchBatch(
+            summary="The role is promising but visa support needs confirmation.",
+            reports=[{
+                "opportunity_id": opportunity.id, "verdict": "clarify",
+                "company_description": "An international technology company serving Japan.",
+                "company_location": "Tokyo, Japan", "company_size": "Small company",
+                "company_website": "https://example.com/", "internship_location": "Tokyo, Japan",
+                "internship_dates": "Not stated in the source", "work_arrangement": "Hybrid",
+                "japanese_requirement": "Intermediate Japanese preferred",
+                "visa_support": "Not stated in the source",
+                "thesis_compatibility": "Requires confirmation",
+                "role_summary": "Supports growth research and campaigns.", "match_score": 84,
+                "fit_summary": "Strong functional fit with practical questions outstanding.",
+                "requirements": [
+                    {"requirement": "Marketing experience", "status": "have", "evidence": "Verified Mobal experience."},
+                    {"requirement": "Native Japanese", "status": "unclear", "evidence": "The source does not state a native requirement."},
+                ],
+                "sources": [{"title": "Official role", "url": "https://example.com/jobs/growth-intern"}],
+                "next_action": "Ask HR about visa support and thesis supervision.",
+            }],
+        )
+        response = self.client.post(reverse("qualify-discoveries"))
+        self.assertRedirects(response, reverse("dashboard"))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.CLARIFY)
+        self.assertEqual(opportunity.japanese_requirement, "Intermediate Japanese preferred")
+        self.assertEqual(opportunity.requirements_assessment[0]["status"], "have")
+        self.assertEqual(opportunity.research_sources[0]["title"], "Official role")
+        self.assertIsNotNone(opportunity.verified_at)
+
+        report = self.client.get(reverse("dashboard"), {"selected": opportunity.id})
+        self.assertContains(report, "Company snapshot")
+        self.assertContains(report, "Japanese required")
+        self.assertContains(report, "You have it")
+        self.assertContains(report, "You don’t have it")
 
 
 @override_settings(OPENAI_API_KEY="")

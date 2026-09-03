@@ -175,6 +175,13 @@ class Opportunity(models.Model):
         REJECTED = "rejected", "Rejected"
         OFFER = "offer", "Offer"
 
+    class VerificationStatus(models.TextChoices):
+        PENDING = "pending", "Research needed"
+        QUALIFIED = "qualified", "Qualified"
+        CLARIFY = "clarify", "Needs clarification"
+        UNSUITABLE = "unsuitable", "Unsuitable"
+        UNVERIFIED = "unverified", "Could not verify"
+
     campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="opportunities")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="opportunities")
     title = models.CharField(max_length=240)
@@ -188,6 +195,24 @@ class Opportunity(models.Model):
     deadline = models.DateField(blank=True, null=True)
     submitted_on = models.DateField(blank=True, null=True)
     fit_summary = models.TextField(blank=True)
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.PENDING,
+        db_index=True,
+    )
+    company_description = models.TextField(blank=True)
+    company_location = models.CharField(max_length=200, blank=True)
+    company_size = models.CharField(max_length=120, blank=True)
+    internship_dates = models.CharField(max_length=200, blank=True)
+    work_arrangement = models.CharField(max_length=160, blank=True)
+    japanese_requirement = models.CharField(max_length=240, blank=True)
+    visa_support = models.CharField(max_length=240, blank=True)
+    thesis_compatibility = models.CharField(max_length=240, blank=True)
+    requirements_assessment = models.JSONField(default=list, blank=True)
+    research_sources = models.JSONField(default=list, blank=True)
+    research_summary = models.TextField(blank=True)
+    verified_at = models.DateTimeField(blank=True, null=True)
     notes = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

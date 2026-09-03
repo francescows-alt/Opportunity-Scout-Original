@@ -7,6 +7,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("applications/", views.dashboard, name="dashboard"),
     path("applications/discover/", views.discover_internships, name="discover-internships"),
+    path("applications/qualify/", views.qualify_discoveries, name="qualify-discoveries"),
     path("inbox/", views.inbox, name="inbox"),
     path("applications/new/", views.opportunity_create, name="opportunity-create"),
     path("applications/<int:opportunity_id>/edit/", views.opportunity_edit, name="opportunity-edit"),

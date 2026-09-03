@@ -25,8 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    const discoveryForm = document.querySelector("[data-discovery-form]");
-    if (discoveryForm) {
+    document.querySelectorAll("[data-discovery-form]").forEach((discoveryForm) => {
         discoveryForm.addEventListener("submit", () => {
             const button = discoveryForm.querySelector("button[type='submit']");
             const progress = discoveryForm.querySelector(".discovery-progress");
@@ -36,5 +35,5 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             if (progress) progress.hidden = false;
         });
-    }
+    });
 });

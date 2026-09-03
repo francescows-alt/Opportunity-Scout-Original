@@ -119,6 +119,43 @@ class InternshipDiscoveryBatch(BaseModel):
     opportunities: list[InternshipDiscovery] = Field(max_length=12)
 
 
+class RequirementAssessment(BaseModel):
+    requirement: str = Field(max_length=300)
+    status: str = Field(pattern="^(have|missing|unclear)$")
+    evidence: str = Field(max_length=500)
+
+
+class ResearchSource(BaseModel):
+    title: str = Field(max_length=240)
+    url: str = Field(max_length=500)
+
+
+class OpportunityResearch(BaseModel):
+    opportunity_id: int
+    verdict: str = Field(pattern="^(qualified|clarify|unsuitable|unverified)$")
+    company_description: str = Field(max_length=1000)
+    company_location: str = Field(max_length=200)
+    company_size: str = Field(max_length=120)
+    company_website: str = Field(max_length=500)
+    internship_location: str = Field(max_length=200)
+    internship_dates: str = Field(max_length=200)
+    work_arrangement: str = Field(max_length=160)
+    japanese_requirement: str = Field(max_length=240)
+    visa_support: str = Field(max_length=240)
+    thesis_compatibility: str = Field(max_length=240)
+    role_summary: str = Field(max_length=1400)
+    match_score: int = Field(ge=0, le=100)
+    fit_summary: str = Field(max_length=1400)
+    requirements: list[RequirementAssessment] = Field(max_length=15)
+    sources: list[ResearchSource] = Field(max_length=8)
+    next_action: str = Field(max_length=240)
+
+
+class OpportunityResearchBatch(BaseModel):
+    summary: str = Field(max_length=1000)
+    reports: list[OpportunityResearch] = Field(max_length=8)
+
+
 def is_configured():
     return bool(settings.OPENAI_API_KEY and settings.OPENAI_API_KEY != "your-key-goes-here")
 
@@ -286,6 +323,54 @@ Return only distinct, useful results. Do not apply, contact anyone, or claim tha
     _record_text_usage(response, "discovery")
     # Conservative allowance so the app's local safety meter accounts for the web tool too.
     AIUsage.objects.create(purpose="discovery_web", estimated_cost_usd=Decimal("0.030000"))
+    return response.output_parsed
+
+
+def qualify_opportunities(campaign, profile, opportunities):
+    """Deeply verify a small batch of discoveries against source pages and profile evidence."""
+    opportunity_data = [{
+        "opportunity_id": item.id,
+        "company": item.organization.name,
+        "title": item.title,
+        "location": item.location,
+        "source_url": item.source_url,
+        "initial_description": item.job_description,
+    } for item in opportunities]
+    campaign_data = {
+        field: str(getattr(campaign, field) or "")
+        for field in [
+            "goal", "locations", "start_date", "end_date", "desired_work", "avoid_work",
+            "work_style", "company_preferences", "language_requirements", "visa_requirements",
+            "university_requirements", "notes", "natural_language_brief",
+        ]
+    }
+    profile_data = profile.structured_profile or {"profile_notes": profile.profile_draft[:7000]}
+    response = _client().responses.parse(
+        model=settings.OPENAI_CHAT_MODEL,
+        tools=[{"type": "web_search"}],
+        max_tool_calls=12,
+        instructions=ROBERT_RULES + """
+Act as a rigorous job-verification and candidate-fit analyst. Open and investigate every supplied opportunity and search for corroborating official information.
+Return one report for every supplied opportunity_id. Prefer the vacancy page, official company website and official careers or immigration information. Every report must contain the useful source URLs you actually consulted.
+Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; unverified when the role/page cannot be verified.
+Never interpret missing information as a negative fact. Use clear phrases such as "Not stated in the source" for unknown dates, visa support, work arrangement, thesis compatibility or Japanese level.
+Build a concise company description, company location, approximate size only when sourced, role summary, and practical facts. Do not produce promotional filler.
+Extract the role's meaningful qualifications and compare each with the VERIFIED candidate profile. Mark have only when profile evidence supports it. Mark missing only when evidence proves the candidate does not meet it. Otherwise mark unclear. Explain the evidence briefly.
+Do not penalize soft preferences as if they were hard rules. Native Japanese requirements, incompatible dates and inability to satisfy graduation/thesis requirements are material concerns when explicitly verified.
+Recalculate match_score conservatively after research. Provide a practical next action. Never apply, contact anyone, or invent facts.
+""",
+        input=(
+            f"Today is {timezone.localdate().isoformat()}.\n"
+            "OPPORTUNITIES TO VERIFY:\n" + json.dumps(opportunity_data, ensure_ascii=False)[:18000]
+            + "\n\nACTIVE CAMPAIGN:\n" + json.dumps(campaign_data, ensure_ascii=False)[:9000]
+            + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:10000]
+        ),
+        text_format=OpportunityResearchBatch,
+        max_output_tokens=10000,
+        store=False,
+    )
+    _record_text_usage(response, "qualification")
+    AIUsage.objects.create(purpose="qualification_web", estimated_cost_usd=Decimal("0.040000"))
     return response.output_parsed
 
 
