@@ -1,0 +1,56 @@
+{% extends "tracker/base.html" %}
+
+{% block title %}{{ page_title }} · Opportunity Scout{% endblock %}
+
+{% block content %}
+<div class="form-heading">
+    <div>
+        <a class="back-link" href="{% url 'campaign-list' %}">← Back to campaigns</a>
+        <p class="eyebrow">Editable instruction sheet</p>
+        <h1>{{ page_title }}</h1>
+        <p class="lede">Nothing here is permanent. Change these settings whenever your plans change.</p>
+    </div>
+</div>
+
+<form method="post" class="campaign-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">1</span><div><h2>The basics</h2><p>Name this search and describe its main goal.</p></div></div>
+        <div class="field-grid two-columns">
+            {% include "tracker/field.html" with field=form.name %}
+            {% include "tracker/field.html" with field=form.goal %}
+            {% include "tracker/field.html" with field=form.locations %}
+            {% include "tracker/field.html" with field=form.start_date %}
+            {% include "tracker/field.html" with field=form.end_date %}
+        </div>
+    </section>
+
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">2</span><div><h2>What should feel worthwhile?</h2><p>These guide recommendations. They do not automatically reject unusual opportunities.</p></div></div>
+        <div class="field-grid two-columns">
+            {% include "tracker/field.html" with field=form.desired_work %}
+            {% include "tracker/field.html" with field=form.avoid_work %}
+            {% include "tracker/field.html" with field=form.work_style %}
+            {% include "tracker/field.html" with field=form.company_preferences %}
+        </div>
+    </section>
+
+    <section class="form-section">
+        <div class="section-intro"><span class="step-number">3</span><div><h2>Practical requirements</h2><p>Record what must be checked. Unknown information can stay unknown.</p></div></div>
+        <div class="field-grid two-columns">
+            {% include "tracker/field.html" with field=form.language_requirements %}
+            {% include "tracker/field.html" with field=form.visa_requirements %}
+            {% include "tracker/field.html" with field=form.university_requirements %}
+            {% include "tracker/field.html" with field=form.notes %}
+        </div>
+        <div class="checkbox-field">{{ form.is_active }} {{ form.is_active.label_tag }} <span>{{ form.is_active.help_text }}</span></div>
+    </section>
+
+    <div class="form-actions">
+        <a class="button secondary" href="{% url 'campaign-list' %}">Cancel</a>
+        <button class="button primary" type="submit">Save campaign</button>
+    </div>
+</form>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "tracker/base.html" %}
+
+{% block content %}
+<section class="hero">
+    <div>
+        <p class="eyebrow">Your direction can change</p>
+        <h1>Your search campaigns</h1>
+        <p class="lede">Each campaign is an editable instruction sheet. Create one for an internship now and a completely different job search later.</p>
+    </div>
+    <a class="button primary" href="{% url 'campaign-create' %}">Create campaign</a>
+</section>
+
+{% if campaigns %}
+<section class="campaign-grid" aria-label="Search campaigns">
+    {% for campaign in campaigns %}
+    <article class="campaign-card">
+        <div class="card-topline">
+            <span class="status{% if campaign.is_active %} active{% endif %}">{% if campaign.is_active %}Active{% else %}Paused{% endif %}</span>
+            <span class="updated">Updated {{ campaign.updated_at|date:"j M Y" }}</span>
+        </div>
+        <h2>{{ campaign.name }}</h2>
+        <p class="goal">{{ campaign.goal }}</p>
+        <dl>
+            <div><dt>Where</dt><dd>{{ campaign.locations|default:"Open" }}</dd></div>
+            <div>
+                <dt>When</dt>
+                <dd>{% if campaign.start_date or campaign.end_date %}{{ campaign.start_date|date:"M Y"|default:"Flexible" }} — {{ campaign.end_date|date:"M Y"|default:"Flexible" }}{% else %}Flexible{% endif %}</dd>
+            </div>
+        </dl>
+        {% if campaign.desired_work %}<p class="summary">{{ campaign.desired_work|truncatewords:28 }}</p>{% endif %}
+        <a class="button secondary" href="{% url 'campaign-edit' campaign.id %}">Edit settings</a>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<section class="empty-state">
+    <div class="empty-icon">◎</div>
+    <h2>No campaign yet</h2>
+    <p>Start by describing one search. Every detail can be changed later.</p>
+    <a class="button primary" href="{% url 'campaign-create' %}">Create your first campaign</a>
+</section>
+{% endif %}
+{% endblock %}
