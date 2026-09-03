@@ -73,6 +73,7 @@ class SearchCycle(models.Model):
     found_count = models.PositiveSmallIntegerField(default=0)
     added_count = models.PositiveSmallIntegerField(default=0)
     duplicate_count = models.PositiveSmallIntegerField(default=0)
+    fee_blocked_count = models.PositiveSmallIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -80,6 +81,31 @@ class SearchCycle(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["campaign", "sequence"], name="unique_campaign_search_cycle"),
         ]
+
+
+class SearchJob(models.Model):
+    """Progress ticket for one end-to-end local search and research run."""
+
+    class Status(models.TextChoices):
+        QUEUED = "queued", "Queued"
+        RUNNING = "running", "Running"
+        COMPLETE = "complete", "Complete"
+        FAILED = "failed", "Failed"
+
+    campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="search_jobs")
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True)
+    stage = models.CharField(max_length=32, default="queued")
+    progress = models.PositiveSmallIntegerField(default=3)
+    message = models.CharField(max_length=300, default="Preparing Robert’s search…")
+    found_count = models.PositiveSmallIntegerField(default=0)
+    added_count = models.PositiveSmallIntegerField(default=0)
+    researched_count = models.PositiveSmallIntegerField(default=0)
+    duplicate_count = models.PositiveSmallIntegerField(default=0)
+    fee_blocked_count = models.PositiveSmallIntegerField(default=0)
+    opportunity_ids = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class CandidateProfile(models.Model):

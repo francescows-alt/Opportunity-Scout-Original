@@ -1,12 +1,15 @@
 import hashlib
+from datetime import timedelta
 from pathlib import Path
 import re
+from threading import Thread
 import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Q
+from django.db import close_old_connections
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -24,7 +27,7 @@ from .forms import (
     QuickInboxForm,
     SearchCampaignForm,
 )
-from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle
+from .models import CandidateProfile, ChatMessage, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
 GENERIC_QUALIFICATION_TERMS = (
@@ -61,6 +64,37 @@ def _normalized_words(value):
 def _opportunity_fingerprint(company, title, location):
     identity = "|".join((_normalized_words(company), _normalized_words(title), _normalized_words(location)))
     return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _score_tone(score):
+    if score is None:
+        return "unknown"
+    if score >= 85:
+        return "excellent"
+    if score >= 70:
+        return "strong"
+    if score >= 50:
+        return "mixed"
+    return "low"
+
+
+def _selected_alert(opportunity):
+    today = timezone.localdate()
+    if opportunity.candidate_fee_required:
+        return {"tone": "danger", "icon": "⊘", "title": "Candidate fee required", "text": f"This program charges you {opportunity.candidate_fee or 'a mandatory fee'} and is unsuitable."}
+    if opportunity.verification_status == Opportunity.VerificationStatus.EXPIRED:
+        return {"tone": "danger", "icon": "⌛", "title": "This vacancy is expired", "text": "Do not spend application time on it."}
+    if opportunity.verification_status == Opportunity.VerificationStatus.UNSUITABLE:
+        return {"tone": "danger", "icon": "×", "title": "Robert marked this unsuitable", "text": opportunity.next_action or "A verified requirement conflicts with your search."}
+    if opportunity.deadline:
+        days_left = (opportunity.deadline - today).days
+        if days_left < 0:
+            return {"tone": "danger", "icon": "⌛", "title": "Deadline passed", "text": f"The deadline was {opportunity.deadline:%-d %b %Y}."}
+        if days_left <= 14:
+            return {"tone": "warning", "icon": "!", "title": f"Deadline in {days_left} days", "text": "Review and prepare this application now."}
+    if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED and (opportunity.match_score or 0) >= 85:
+        return {"tone": "success", "icon": "★", "title": "High-priority match", "text": "The verified evidence makes this one worth serious attention."}
+    return None
 
 
 def home(request):
@@ -110,6 +144,17 @@ def dashboard(request):
     selected_id = request.GET.get("selected")
     if selected_id:
         selected = opportunities.filter(id=selected_id).first()
+    completed_job_id = request.GET.get("search_complete", "")
+    completed_search_job = (
+        SearchJob.objects.filter(pk=completed_job_id, status=SearchJob.Status.COMPLETE).first()
+        if completed_job_id.isdigit() else None
+    )
+    fresh_ids = set(completed_search_job.opportunity_ids if completed_search_job else [])
+    for opportunity in page.object_list:
+        opportunity.match_tone = _score_tone(opportunity.match_score)
+        opportunity.is_fresh = opportunity.id in fresh_ids
+    if selected:
+        selected.match_tone = _score_tone(selected.match_score)
 
     all_opportunities = Opportunity.objects.all()
     research_needed_count = all_opportunities.filter(incomplete_research).count()
@@ -137,6 +182,11 @@ def dashboard(request):
             verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
         "favorites_count": all_opportunities.filter(is_favorite=True).count(),
+        "selected_alert": _selected_alert(selected) if selected else None,
+        "active_search_job": SearchJob.objects.filter(
+            status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING],
+        ).order_by("-created_at").first(),
+        "completed_search_job": completed_search_job,
     }
     return render(request, "tracker/dashboard.html", context)
 
@@ -147,6 +197,102 @@ def toggle_favorite(request, opportunity_id):
     opportunity.is_favorite = not opportunity.is_favorite
     opportunity.save(update_fields=["is_favorite", "updated_at"])
     return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
+def _update_search_job(job_id, **values):
+    values["updated_at"] = timezone.now()
+    SearchJob.objects.filter(pk=job_id).update(**values)
+
+
+def _run_complete_search(job_id):
+    """Run the existing search and qualification views behind one progress ticket."""
+    from django.test import Client
+
+    close_old_connections()
+    try:
+        job = SearchJob.objects.select_related("campaign").get(pk=job_id)
+        before_ids = set(Opportunity.objects.filter(campaign=job.campaign).values_list("id", flat=True))
+        previous_cycle = SearchCycle.objects.filter(campaign=job.campaign).order_by("-sequence").first()
+        previous_sequence = previous_cycle.sequence if previous_cycle else 0
+        _update_search_job(job_id, status=SearchJob.Status.RUNNING, stage="searching", progress=12, message="Searching new sources and keywords…")
+
+        client = Client(HTTP_HOST="localhost")
+        client.post(reverse("discover-internships"))
+        cycle = SearchCycle.objects.filter(campaign=job.campaign, sequence__gt=previous_sequence).order_by("-sequence").first()
+        if cycle is None:
+            raise RuntimeError("The discovery stage did not complete.")
+
+        new_ids = list(
+            Opportunity.objects.filter(campaign=job.campaign)
+            .exclude(pk__in=before_ids)
+            .values_list("id", flat=True)
+        )
+        _update_search_job(
+            job_id, stage="checking", progress=38,
+            message="Duplicates and candidate fees checked.",
+            found_count=cycle.found_count, added_count=len(new_ids),
+            duplicate_count=cycle.duplicate_count, fee_blocked_count=cycle.fee_blocked_count,
+            opportunity_ids=new_ids,
+        )
+
+        total = len(new_ids)
+        for offset in range(0, total, 8):
+            chunk = new_ids[offset:offset + 8]
+            _update_search_job(
+                job_id, stage="researching",
+                progress=48 + round(38 * offset / max(total, 1)),
+                message=f"Deep research: {min(offset + 1, total)}–{min(offset + len(chunk), total)} of {total}…",
+            )
+            client.post(reverse("qualify-discoveries"), {"opportunity_ids": chunk})
+
+        researched = Opportunity.objects.filter(pk__in=new_ids, verified_at__isnull=False).count()
+        _update_search_job(job_id, stage="saving", progress=92, message="Saving reports and priority signals…", researched_count=researched)
+        incomplete = total - researched
+        if incomplete:
+            final_message = f"Finished with {incomplete} report{'s' if incomplete != 1 else ''} needing retry."
+        else:
+            final_message = f"Complete: {researched} researched, {cycle.duplicate_count} duplicates blocked, {cycle.fee_blocked_count} fee programs excluded."
+        _update_search_job(job_id, status=SearchJob.Status.COMPLETE, stage="complete", progress=100, message=final_message)
+    except Exception as error:
+        _update_search_job(
+            job_id, status=SearchJob.Status.FAILED, stage="failed", progress=100,
+            message="Search stopped safely. Existing information was not damaged.", error=str(error)[:1000],
+        )
+    finally:
+        close_old_connections()
+
+
+@require_POST
+def start_complete_search(request):
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    profile = CandidateProfile.objects.filter(pk=1).first()
+    if not campaign:
+        return JsonResponse({"error": "Create and activate a search campaign first."}, status=400)
+    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
+        return JsonResponse({"error": "Complete your profile before Robert searches."}, status=400)
+    stale_before = timezone.now() - timedelta(minutes=30)
+    SearchJob.objects.filter(
+        status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING], updated_at__lt=stale_before,
+    ).update(
+        status=SearchJob.Status.FAILED, stage="failed", progress=100,
+        message="Previous search expired safely; start a new one.", updated_at=timezone.now(),
+    )
+    active = SearchJob.objects.filter(status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING]).order_by("-created_at").first()
+    if active:
+        return JsonResponse({"job_id": active.id, "status_url": reverse("search-job-status", args=[active.id])})
+    job = SearchJob.objects.create(campaign=campaign)
+    Thread(target=_run_complete_search, args=(job.id,), daemon=True).start()
+    return JsonResponse({"job_id": job.id, "status_url": reverse("search-job-status", args=[job.id])}, status=202)
+
+
+def search_job_status(request, job_id):
+    job = get_object_or_404(SearchJob, pk=job_id)
+    return JsonResponse({
+        "status": job.status, "stage": job.stage, "progress": job.progress,
+        "message": job.message, "found": job.found_count, "added": job.added_count,
+        "researched": job.researched_count, "duplicates": job.duplicate_count,
+        "fees": job.fee_blocked_count, "opportunity_ids": job.opportunity_ids,
+    })
 
 
 @require_POST
@@ -232,6 +378,7 @@ def discover_internships(request):
             found_count=len(batch.opportunities),
             added_count=added,
             duplicate_count=duplicates,
+            fee_blocked_count=fee_blocked,
         )
         ChatMessage.objects.create(
             scope=ChatMessage.Scope.GENERAL,
@@ -256,10 +403,12 @@ def qualify_discoveries(request):
     if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
         messages.error(request, "Finish a basic profile first so Robert can compare qualifications truthfully.")
         return redirect("profile")
-    opportunities = list(
-        Opportunity.objects.select_related("organization")
-        .filter(campaign=campaign)
-        .filter(
+    opportunity_query = Opportunity.objects.select_related("organization").filter(campaign=campaign)
+    requested_ids = [value for value in request.POST.getlist("opportunity_ids") if value.isdigit()]
+    if requested_ids:
+        opportunity_query = opportunity_query.filter(pk__in=requested_ids)
+    else:
+        opportunity_query = opportunity_query.filter(
             Q(verification_status=Opportunity.VerificationStatus.PENDING)
             | Q(company_country="")
             | Q(company_industry="")
@@ -268,8 +417,7 @@ def qualify_discoveries(request):
             | Q(candidate_fee="")
             | Q(compensation="")
         )
-        .order_by("-match_score", "-created_at")[:8]
-    )
+    opportunities = list(opportunity_query.order_by("-match_score", "-created_at")[:8])
     if not opportunities:
         messages.info(request, "There are no new discoveries waiting for research.")
         return redirect("dashboard")
@@ -316,6 +464,7 @@ def qualify_discoveries(request):
             opportunity.location = report.internship_location.strip() or opportunity.location
             opportunity.internship_dates = report.internship_dates.strip()
             opportunity.application_deadline_text = report.application_deadline.strip()
+            opportunity.deadline = report.application_deadline_iso
             opportunity.responsibilities = report.responsibilities
             opportunity.what_you_would_do = report.what_you_would_do.strip()
             opportunity.what_company_needs = report.what_company_needs.strip()
@@ -344,7 +493,7 @@ def qualify_discoveries(request):
                 "company_country", "company_industry",
                 "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
                 "location", "internship_dates", "work_arrangement", "japanese_requirement",
-                "application_deadline_text", "responsibilities",
+                "application_deadline_text", "deadline", "responsibilities",
                 "what_you_would_do", "what_company_needs", "candidate_fee_required",
                 "candidate_fee", "compensation",
                 "visa_support", "thesis_compatibility", "job_description", "match_score",

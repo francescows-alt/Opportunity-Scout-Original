@@ -1,3 +1,4 @@
+from datetime import timedelta
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -5,9 +6,10 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch, OpportunityResearchBatch
-from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle
+from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
 @override_settings(OPENAI_API_KEY="")
@@ -95,7 +97,7 @@ class DashboardTests(TestCase):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         response = self.client.get(reverse("dashboard"))
         self.assertContains(response, "Let Robert search first")
-        self.assertContains(response, "Find internships")
+        self.assertContains(response, "Find &amp; research internships")
 
     @patch("tracker.views.research_internships")
     def test_robert_discovery_adds_source_backed_opportunity(self, research):
@@ -137,6 +139,53 @@ class DashboardTests(TestCase):
         self.assertTrue(opportunity.is_favorite)
         favorites = self.client.get(reverse("dashboard"), {"review": "favorites"})
         self.assertContains(favorites, "Favorite Company")
+
+    @patch("tracker.views.Thread")
+    def test_one_click_search_creates_background_progress_ticket(self, thread):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        response = self.client.post(reverse("search-start"))
+        self.assertEqual(response.status_code, 202)
+        job = SearchJob.objects.get()
+        self.assertEqual(response.json()["job_id"], job.id)
+        thread.assert_called_once()
+        status = self.client.get(reverse("search-job-status", args=[job.id])).json()
+        self.assertEqual(status["stage"], "queued")
+
+    @patch("django.test.Client")
+    def test_background_search_reaches_complete_stage(self, client_class):
+        from .views import _run_complete_search
+
+        job = SearchJob.objects.create(campaign=self.campaign)
+
+        def simulate_stage(url, data=None):
+            if url == reverse("discover-internships"):
+                SearchCycle.objects.create(
+                    campaign=self.campaign, sequence=1, strategy="Employer pages",
+                    found_count=0, added_count=0,
+                )
+            return self.client.get(reverse("dashboard"))
+
+        client_class.return_value.post.side_effect = simulate_stage
+        _run_complete_search(job.id)
+        job.refresh_from_db()
+        self.assertEqual(job.status, SearchJob.Status.COMPLETE)
+        self.assertEqual(job.progress, 100)
+
+    def test_selected_role_shows_priority_banner_and_score_tone(self):
+        organization = Organization.objects.create(name="Excellent Company")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            verification_status=Opportunity.VerificationStatus.QUALIFIED,
+            match_score=91, deadline=timezone.localdate() + timedelta(days=30),
+        )
+        response = self.client.get(reverse("dashboard"), {"selected": opportunity.id})
+        self.assertContains(response, "High-priority match")
+        self.assertContains(response, "match-excellent")
+
+        opportunity.deadline = timezone.localdate() + timedelta(days=5)
+        opportunity.save(update_fields=["deadline", "updated_at"])
+        urgent = self.client.get(reverse("dashboard"), {"selected": opportunity.id})
+        self.assertContains(urgent, "Deadline in 5 days")
 
     @patch("tracker.views.research_internships")
     def test_discovery_blocks_duplicate_roles_and_candidate_fees(self, research):
@@ -196,6 +245,7 @@ class DashboardTests(TestCase):
                 "work_culture": "Not established by reliable public sources.",
                 "internship_dates": "Not stated in the source", "work_arrangement": "Hybrid",
                 "application_deadline": "Not stated in the source",
+                "application_deadline_iso": None,
                 "japanese_requirement": "Intermediate Japanese preferred",
                 "visa_support": "Not stated in the source",
                 "thesis_compatibility": "Requires confirmation",
