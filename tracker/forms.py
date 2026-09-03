@@ -52,7 +52,7 @@ class CandidateProfileForm(forms.ModelForm):
             "profile_draft": forms.Textarea(attrs={"rows": 16, "data-dictation": "true"}),
         }
         labels = {
-            "long_description": "Anything else the assistant should know",
+            "long_description": "Original notes and anything else Robert should remember",
             "profile_draft": "Live editable profile",
         }
 

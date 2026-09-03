@@ -226,9 +226,9 @@ def profile(request):
         try:
             result = analyze_profile_documents(
                 documents,
-                candidate.profile_draft or candidate.long_description,
+                "\n\n".join(filter(None, [candidate.profile_draft, candidate.long_description])),
             )
-            candidate.document_profile_proposal = result.proposed_profile
+            candidate.document_profile_proposal = result.to_profile_text()
             candidate.document_evidence = [item.model_dump() for item in result.evidence]
             candidate.document_questions = result.uncertainties + result.follow_up_questions
             candidate.document_analysis_status = CandidateProfile.AnalysisStatus.READY
@@ -256,9 +256,13 @@ def profile(request):
     if request.method == "POST" and request.POST.get("action") == "accept_document_profile":
         proposal = request.POST.get("document_profile_proposal", "").strip()
         if proposal:
+            update_fields = ["document_profile_proposal", "profile_draft", "updated_at"]
+            if candidate.profile_draft.strip() and not candidate.long_description.strip():
+                candidate.long_description = candidate.profile_draft.strip()
+                update_fields.append("long_description")
             candidate.document_profile_proposal = proposal
             candidate.profile_draft = proposal
-            candidate.save(update_fields=["document_profile_proposal", "profile_draft", "updated_at"])
+            candidate.save(update_fields=update_fields)
             messages.success(request, "The reviewed document profile is now your editable source of truth.")
         else:
             messages.error(request, "The proposed profile cannot be empty.")
@@ -267,7 +271,7 @@ def profile(request):
     if request.method == "POST" and request.POST.get("action") == "interview_answer":
         answer = request.POST.get("answer", "").strip()
         if answer:
-            current_profile = candidate.profile_draft or candidate.long_description
+            current_profile = "\n\n".join(filter(None, [candidate.profile_draft, candidate.long_description]))
             try:
                 turn = profile_reply(answer, current_profile)
                 assistant_text = turn.reply

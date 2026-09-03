@@ -63,21 +63,49 @@
 
 {% if candidate.document_analysis_status == 'ready' %}
 <section class="documents-wide analysis-review">
-    <div class="section-intro"><span class="step-number">!</span><div><h2>Review Robert’s proposal</h2><p>Check every claim. Edit anything that is incomplete or wrong before accepting it.</p></div></div>
+    <div class="review-heading">
+        <div><span class="ai-avatar">R</span><div><p class="eyebrow">Robert’s synthesis</p><h2>Review your professional profile</h2><p>Important information, organized for matching and applications—not a copy of your CV.</p></div></div>
+        <span class="review-required">Review required</span>
+    </div>
     <div class="analysis-columns">
-        <form method="post" class="proposal-form">
+        <form method="post" class="proposal-form" id="proposal-form">
             {% csrf_token %}<input type="hidden" name="action" value="accept_document_profile">
-            <label for="document-profile-proposal"><strong>Proposed profile</strong></label>
-            <textarea id="document-profile-proposal" name="document_profile_proposal" rows="22" data-dictation="true">{{ candidate.document_profile_proposal }}</textarea>
-            <button class="button primary" type="submit">Accept as my profile</button>
+            <div class="profile-paper">
+                <div class="profile-paper-toolbar">
+                    <div><span>Profile draft</span><small>Not active until you accept it</small></div>
+                    <div class="view-switch" aria-label="Profile view">
+                        <button type="button" class="active" data-profile-view="preview">Preview</button>
+                        <button type="button" data-profile-view="edit">Edit text</button>
+                    </div>
+                </div>
+                <div id="profile-proposal-preview" class="profile-proposal-preview"></div>
+                <div class="proposal-editor" hidden>
+                    <label for="document-profile-proposal">Edit Robert’s draft</label>
+                    <textarea id="document-profile-proposal" name="document_profile_proposal" rows="26" data-dictation="true">{{ candidate.document_profile_proposal }}</textarea>
+                    <small>Your changes update the preview. Nothing is sent to employers.</small>
+                </div>
+            </div>
+            <div class="proposal-actions">
+                <button class="button secondary" type="button" data-profile-view="edit">Edit before accepting</button>
+                <button class="button primary" type="submit">Accept as my profile</button>
+            </div>
         </form>
-        <div class="evidence-panel">
-            <h3>Evidence Robert used</h3>
-            {% for item in candidate.document_evidence %}
-            <article><strong>{{ item.claim }}</strong><p>“{{ item.evidence }}”</p><small>{{ item.source }}</small></article>
-            {% empty %}<p>No evidence was returned. Do not accept the proposal until this is resolved.</p>{% endfor %}
-            {% if candidate.document_questions %}<h3>Questions and uncertainties</h3><ul>{% for question in candidate.document_questions %}<li>{{ question }}</li>{% endfor %}</ul>{% endif %}
-        </div>
+        <aside class="review-sidebar">
+            <section class="review-card evidence-panel">
+                <div class="review-card-heading"><div><span class="card-icon verified">✓</span><div><h3>Supporting evidence</h3><p>{{ candidate.document_evidence|length }} claims traced to a source</p></div></div></div>
+                <div class="evidence-list">
+                {% for item in candidate.document_evidence %}
+                <article><strong>{{ item.claim }}</strong><p>“{{ item.evidence }}”</p><small>{{ item.source }}</small></article>
+                {% empty %}<p>No evidence was returned. Do not accept the proposal until this is resolved.</p>{% endfor %}
+                </div>
+            </section>
+            {% if candidate.document_questions %}
+            <section class="review-card question-panel">
+                <div class="review-card-heading"><div><span class="card-icon question">?</span><div><h3>Still to clarify</h3><p>{{ candidate.document_questions|length }} points Robert should ask about</p></div></div></div>
+                <ol>{% for question in candidate.document_questions %}<li>{{ question }}</li>{% endfor %}</ol>
+            </section>
+            {% endif %}
+        </aside>
     </div>
 </section>
 {% elif candidate.document_analysis_status == 'error' %}

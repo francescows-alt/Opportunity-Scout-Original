@@ -139,7 +139,12 @@ class CandidateProfileTests(TestCase):
     @patch("tracker.views.analyze_profile_documents")
     def test_document_analysis_requires_review_before_updating_profile(self, analyze):
         analyze.return_value = DocumentProfileAnalysis(
-            proposed_profile="Verified proposed profile",
+            professional_identity="## Verified proposed profile",
+            education_and_requirements="Business degree",
+            relevant_experience_and_results="Relevant project",
+            skills_and_languages="English",
+            career_direction="International business work",
+            practical_constraints="Graduation internship",
             evidence=[EvidenceItem(claim="Studies business", source="cv.pdf", evidence="Business student")],
             uncertainties=["Graduation date is unclear"],
             follow_up_questions=["When do you graduate?"],
@@ -150,12 +155,19 @@ class CandidateProfileTests(TestCase):
                 "action": "upload_document",
                 "files": SimpleUploadedFile("cv.pdf", b"example CV", content_type="application/pdf"),
             })
+            profile = CandidateProfile.objects.get(pk=1)
+            profile.profile_draft = "My original long essay"
+            profile.save(update_fields=["profile_draft", "updated_at"])
             response = self.client.post(reverse("profile"), {"action": "analyze_documents"})
             self.assertRedirects(response, reverse("profile"))
             profile = CandidateProfile.objects.get(pk=1)
             self.assertEqual(profile.document_analysis_status, CandidateProfile.AnalysisStatus.READY)
-            self.assertEqual(profile.profile_draft, "")
-            self.assertEqual(profile.document_profile_proposal, "Verified proposed profile")
+            self.assertEqual(profile.profile_draft, "My original long essay")
+            self.assertIn("Professional identity\nVerified proposed profile", profile.document_profile_proposal)
+            self.assertNotIn("##", profile.document_profile_proposal)
+            review = self.client.get(reverse("profile"))
+            self.assertContains(review, "Review your professional profile")
+            self.assertContains(review, "Preview")
 
             response = self.client.post(reverse("profile"), {
                 "action": "accept_document_profile",
@@ -164,6 +176,7 @@ class CandidateProfileTests(TestCase):
             self.assertRedirects(response, reverse("profile"))
             profile.refresh_from_db()
             self.assertEqual(profile.profile_draft, "Verified proposed profile with my correction")
+            self.assertEqual(profile.long_description, "My original long essay")
 
 
 @override_settings(OPENAI_API_KEY="")
