@@ -137,7 +137,7 @@ dd { margin: 0; }
 .application-row.fresh { animation: fresh-row 1.8s ease-out both; }
 .application-row.expired { background: #fffafa; }
 .row-flags { position: absolute; top: 0.18rem; right: 0.3rem; display: flex; align-items: center; gap: 0.25rem; z-index: 2; }
-.edge-flag { border-radius: 0.35rem; padding: 0.13rem 0.34rem; font-size: 0.51rem; font-weight: 900; letter-spacing: 0.035em; line-height: 1.2; text-transform: uppercase; box-shadow: 0 2px 7px rgba(28,38,60,0.08); }
+.edge-flag { border-radius: 0.35rem; padding: 0.15rem 0.4rem; font-size: 0.66rem; font-weight: 900; letter-spacing: 0.025em; line-height: 1.2; text-transform: uppercase; box-shadow: 0 2px 7px rgba(28,38,60,0.08); }
 .edge-flag.expired { background: #f4dddd; color: #922c2c; }
 .edge-flag.japanese-only { background: #fff0c9; color: #805200; }
 .company-cell { display: flex; min-width: 0; flex-direction: column; }
@@ -556,7 +556,7 @@ dd { margin: 0; }
     .filters { align-items: stretch; flex-direction: column; }
     .filters select { min-height: 3rem; }
     .table-header { display: none; }
-    .application-row { grid-template-columns: minmax(0, 1fr) auto; gap: 0.65rem; padding-top: 1.15rem; }
+    .application-row { grid-template-columns: minmax(0, 1fr) auto; gap: 0.65rem; padding-top: 1.35rem; }
     .application-row .list-meta { grid-column: auto; }
     .application-row .list-meta small { display: block; }
     .application-row .status-stack { grid-column: 1; }
