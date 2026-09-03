@@ -21,6 +21,21 @@ and the latest Git history before changing anything.
 - Keep the interface compact, practical, visually polished, and able to scale to
   hundreds of applications.
 
+## Communication
+
+- Lead with the blocker, limitation or risk in the FIRST line. Never bury it.
+- Default to under 200 words. Write a long report only when Francesco asks.
+- Say what you cannot verify BEFORE doing the work, not afterwards.
+
+## Verification
+
+- If you cannot verify it, do not ship it. Claude has no browser here: it can
+  run tests and read raw HTML, but cannot see the rendered page.
+- Never commit CSS, template or layout changes until Francesco has confirmed
+  they look right in the browser.
+- After adding any new Python file, tell Francesco to restart the server.
+  Django does not always pick up new files while running.
+
 ## Development workflow
 
 1. Run `git status --short` and read recent commits before editing.
