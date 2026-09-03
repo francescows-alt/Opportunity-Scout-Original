@@ -243,11 +243,18 @@ class DashboardTests(TestCase):
             ],
         )
         self.client.post(reverse("discover-internships"))
-        self.assertEqual(Opportunity.objects.count(), 1)
+        # The duplicate is skipped entirely, but the fee-charging program is now kept
+        # (marked unsuitable) so Robert remembers it and never re-researches it later.
+        self.assertEqual(Opportunity.objects.count(), 2)
         existing.refresh_from_db()
         self.assertEqual(existing.verification_status, Opportunity.VerificationStatus.QUALIFIED)
+        fee_opportunity = Opportunity.objects.get(title="Tokyo Internship")
+        self.assertEqual(fee_opportunity.verification_status, Opportunity.VerificationStatus.UNSUITABLE)
+        self.assertTrue(fee_opportunity.candidate_fee_required)
+        self.assertIsNotNone(fee_opportunity.verified_at)
         cycle = SearchCycle.objects.get()
         self.assertEqual(cycle.duplicate_count, 1)
+        self.assertEqual(cycle.fee_blocked_count, 1)
         self.assertEqual(cycle.added_count, 0)
 
     @patch("tracker.views.qualify_opportunities")

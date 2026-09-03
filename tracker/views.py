@@ -424,9 +424,6 @@ def discover_internships(request):
             if canonical_url in known_urls or fingerprint in known_fingerprints:
                 duplicates += 1
                 continue
-            if item.candidate_fee_required:
-                fee_blocked += 1
-                continue
             organization = Organization.objects.filter(name__iexact=item.company.strip()).first()
             if organization is None:
                 organization = Organization.objects.create(name=item.company.strip(), location=item.location.strip())
@@ -451,6 +448,13 @@ def discover_internships(request):
                 "verification_status": Opportunity.VerificationStatus.PENDING,
                 "verified_at": None,
             }
+            if item.candidate_fee_required:
+                # Save it (marked unsuitable) instead of discarding it, so it stays out of
+                # future known-roles context and Robert never re-spends search budget on it.
+                values["verification_status"] = Opportunity.VerificationStatus.UNSUITABLE
+                values["verified_at"] = timezone.now()
+                values["next_action"] = "Not suitable — candidate fee required"
+                fee_blocked += 1
             Opportunity.objects.create(
                 campaign=campaign,
                 source_url=source_url,
@@ -459,7 +463,8 @@ def discover_internships(request):
             )
             known_urls.add(canonical_url)
             known_fingerprints.add(fingerprint)
-            added += 1
+            if not item.candidate_fee_required:
+                added += 1
         next_sequence = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
         SearchCycle.objects.create(
             campaign=campaign,
