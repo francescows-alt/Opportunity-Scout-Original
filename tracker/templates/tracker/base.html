@@ -1,11 +1,11 @@
-{% load static %}
+{% load static icons %}
 <!doctype html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}Opportunity Scout{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}?v=20260903c">
+    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}?v=20260903d">
 </head>
 <body>
     <div class="app-frame">
@@ -17,10 +17,10 @@
             <span class="local-badge">Private · local</span>
         </header>
         <nav class="main-nav" aria-label="Main navigation">
-            <a class="{% if request.resolver_match.url_name == 'dashboard' or 'opportunity' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'dashboard' %}">▦ <span>Applications</span></a>
-            <a class="{% if request.resolver_match.url_name == 'inbox' %}current{% endif %}" href="{% url 'inbox' %}">▣ <span>Job inbox</span></a>
-            <a class="{% if request.resolver_match.url_name == 'profile' %}current{% endif %}" href="{% url 'profile' %}">♙ <span>My profile</span></a>
-            <a class="{% if 'campaign' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'campaign-list' %}">☷ <span>Search rules</span></a>
+            <a class="{% if request.resolver_match.url_name == 'dashboard' or 'opportunity' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'dashboard' %}">{% icon "nav-applications" %} <span>Applications</span></a>
+            <a class="{% if request.resolver_match.url_name == 'inbox' %}current{% endif %}" href="{% url 'inbox' %}">{% icon "nav-inbox" %} <span>Job inbox</span></a>
+            <a class="{% if request.resolver_match.url_name == 'profile' %}current{% endif %}" href="{% url 'profile' %}">{% icon "nav-profile" %} <span>My profile</span></a>
+            <a class="{% if 'campaign' in request.resolver_match.url_name %}current{% endif %}" href="{% url 'campaign-list' %}">{% icon "nav-rules" %} <span>Search rules</span></a>
         </nav>
         <main class="page-shell">
             {% for message in messages %}<div class="message">{{ message }}</div>{% endfor %}
@@ -47,6 +47,6 @@
     </aside>{% endif %}
     <div id="dictation-config" data-transcription-url="{% url 'transcribe-audio' %}"></div>
     <script src="{% static 'tracker/dictation.js' %}?v=20260903c" defer></script>
-    <script src="{% static 'tracker/app.js' %}?v=20260903c" defer></script>
+    <script src="{% static 'tracker/app.js' %}?v=20260903d" defer></script>
 </body>
 </html>
