@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.db import close_old_connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -132,7 +132,13 @@ def _incomplete_research_filter():
 
 
 def dashboard(request):
-    opportunities = Opportunity.objects.select_related("campaign", "organization")
+    # Each campaign is a separate job-hunt sheet: only the selected one is shown.
+    active_campaign = SearchCampaign.objects.filter(is_active=True).first()
+    campaign_opportunities = (
+        Opportunity.objects.filter(campaign=active_campaign)
+        if active_campaign else Opportunity.objects.none()
+    )
+    opportunities = campaign_opportunities.select_related("campaign", "organization")
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
     review = request.GET.get("review", "").strip()
@@ -178,7 +184,7 @@ def dashboard(request):
     if selected:
         selected.match_tone = _score_tone(selected.match_score)
 
-    all_opportunities = Opportunity.objects.all()
+    all_opportunities = campaign_opportunities
     research_needed_count = all_opportunities.filter(incomplete_research).count()
     context = {
         "page": page,
@@ -193,7 +199,7 @@ def dashboard(request):
         "action_count": all_opportunities.exclude(next_action="").exclude(
             status__in=[Opportunity.Status.REJECTED, Opportunity.Status.OFFER]
         ).count(),
-        "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
+        "active_campaign": active_campaign,
         "ai_configured": is_configured(),
         "research_needed_count": research_needed_count,
         "serious_count": all_opportunities.filter(
@@ -631,7 +637,26 @@ def qualify_discoveries(request):
 
 
 def campaign_list(request):
-    return render(request, "tracker/campaign_list.html", {"campaigns": SearchCampaign.objects.all()})
+    # Older data can have several campaigns flagged active. Mark only the one the
+    # dashboard and Robert actually use, so every other card stays switchable.
+    return render(request, "tracker/campaign_list.html", {
+        "campaigns": SearchCampaign.objects.annotate(opportunity_count=Count("opportunities")),
+        "active_campaign": SearchCampaign.objects.filter(is_active=True).first(),
+    })
+
+
+@require_POST
+def campaign_activate(request, campaign_id):
+    """Switch to one job-hunt sheet. Exactly one campaign is active at a time, so
+    Robert and the Applications list can never disagree about which search is in use."""
+    campaign = get_object_or_404(SearchCampaign, pk=campaign_id)
+    with transaction.atomic():
+        SearchCampaign.objects.exclude(pk=campaign.pk).filter(is_active=True).update(
+            is_active=False, updated_at=timezone.now(),
+        )
+        SearchCampaign.objects.filter(pk=campaign.pk).update(is_active=True, updated_at=timezone.now())
+    messages.success(request, f'Now working on "{campaign.name}". The Applications list shows only this search.')
+    return redirect("dashboard")
 
 
 def campaign_create(request):

@@ -5,7 +5,7 @@
     <div>
         <p class="eyebrow">Your direction can change</p>
         <h1>Your search campaigns</h1>
-        <p class="lede">Each campaign is an editable instruction sheet. Create one for an internship now and a completely different job search later.</p>
+        <p class="lede">Each campaign is a separate job hunt with its own saved applications. Only the one marked “In use” is searched, and Applications shows only its results.</p>
     </div>
     <a class="button primary" href="{% url 'campaign-create' %}">Create campaign</a>
 </section>
@@ -15,8 +15,8 @@
     {% for campaign in campaigns %}
     <article class="campaign-card">
         <div class="card-topline">
-            <span class="status{% if campaign.is_active %} active{% endif %}">{% if campaign.setup_status == 'waiting_ai' %}Waiting for AI setup{% elif campaign.is_active %}Active{% else %}Paused{% endif %}</span>
-            <span class="updated">Updated {{ campaign.updated_at|date:"j M Y" }}</span>
+            <span class="status{% if campaign.id == active_campaign.id %} active{% endif %}">{% if campaign.setup_status == 'waiting_ai' %}Waiting for AI setup{% elif campaign.id == active_campaign.id %}In use{% else %}Paused{% endif %}</span>
+            <span class="updated">{{ campaign.opportunity_count }} saved · updated {{ campaign.updated_at|date:"j M Y" }}</span>
         </div>
         <h2>{{ campaign.name }}</h2>
         <p class="goal">{% if campaign.setup_status == 'waiting_ai' %}{{ campaign.natural_language_brief|truncatewords:24 }}{% else %}{{ campaign.goal }}{% endif %}</p>
@@ -29,6 +29,7 @@
         </dl>
         {% if campaign.desired_work %}<p class="summary">{{ campaign.desired_work|truncatewords:28 }}</p>{% endif %}
         {% if campaign.setup_status == 'waiting_ai' %}<a class="button primary" href="{% url 'campaign-setup' campaign.id %}">Continue with Robert</a>{% endif %}
+        {% if campaign.id != active_campaign.id %}<form method="post" action="{% url 'campaign-activate' campaign.id %}">{% csrf_token %}<button class="button primary" type="submit">Use this search</button></form>{% endif %}
         <a class="button secondary" href="{% url 'campaign-edit' campaign.id %}">Edit settings</a>
     </article>
     {% endfor %}

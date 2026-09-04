@@ -3,7 +3,7 @@
 {% block content %}
 {% if not selected %}
 <section class="dashboard-heading">
-    <div><h1>Applications</h1><p class="lede">{% now "l, j F" %}{% if active_campaign %} · {{ active_campaign.name }}{% endif %}</p></div>
+    <div><h1>Applications</h1><p class="lede">{% now "l, j F" %} · {% if active_campaign %}{{ active_campaign.name }} — <a href="{% url 'campaign-list' %}">switch search</a>{% else %}<a href="{% url 'campaign-list' %}">choose which search to work on</a>{% endif %}</p></div>
     <a class="button secondary add-button" href="{% url 'inbox' %}">＋<span>Quick add</span></a>
 </section>
 
@@ -89,6 +89,6 @@
         {% endfor %}
     </section>
     {% if page.paginator.num_pages > 1 %}<nav class="pagination">{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">← Previous</a>{% endif %}<span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ query|urlencode }}&status={{ current_status }}&review={{ current_review }}">Next →</a>{% endif %}</nav>{% endif %}
-    {% else %}<section class="empty-state"><div class="empty-icon">◎</div><h2>No opportunities here</h2><p>Ask Robert to search, or choose another pipeline tab.</p></section>{% endif %}
+    {% else %}<section class="empty-state"><div class="empty-icon">◎</div>{% if not active_campaign %}<h2>No search selected</h2><p>Pick which job hunt you want to work on. Nothing has been deleted — each search keeps its own saved applications.</p><a class="button primary" href="{% url 'campaign-list' %}">Choose a search</a>{% else %}<h2>Nothing saved in “{{ active_campaign.name }}” yet</h2><p>This search has its own separate list. Ask Robert to search, choose another pipeline tab, or <a href="{% url 'campaign-list' %}">switch to a different search</a>.</p>{% endif %}</section>{% endif %}
 </section>
 {% endblock %}

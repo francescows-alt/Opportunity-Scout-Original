@@ -21,6 +21,7 @@ urlpatterns = [
     path("campaigns/<int:campaign_id>/setup/", views.campaign_setup, name="campaign-setup"),
     path("campaigns/new/advanced/", views.campaign_create_advanced, name="campaign-create-advanced"),
     path("campaigns/<int:campaign_id>/edit/", views.campaign_edit, name="campaign-edit"),
+    path("campaigns/<int:campaign_id>/activate/", views.campaign_activate, name="campaign-activate"),
     path("robert/send/", views.robert_send, name="robert-send"),
     path("api/transcribe/", views.transcribe_audio, name="transcribe-audio"),
 ]

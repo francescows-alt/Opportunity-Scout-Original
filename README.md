@@ -28,7 +28,9 @@ The application runs only while that terminal command is active. Press
 
 - Create search campaigns
 - Edit every campaign requirement and preference
-- Pause or activate campaigns
+- Keep each campaign as a separate sheet of job hunting: exactly one is in use at
+  a time, Applications shows only that campaign's saved roles, and switching is
+  one click on the Search rules page. Nothing is deleted when you switch.
 - Add and edit advertised jobs or cold-outreach targets
 - Search and filter applications, with pagination for large lists
 - Track match score, status, next action, deadlines, and CV submission date

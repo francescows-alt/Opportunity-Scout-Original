@@ -483,6 +483,64 @@ class DashboardTests(TestCase):
         self.assertContains(response, "Serious Company")
         self.assertNotContains(response, "Still Unchecked")
 
+    def test_activating_a_campaign_deactivates_the_others(self):
+        other = SearchCampaign.objects.create(name="Marketing 2027", goal="Internship")
+        self.assertTrue(SearchCampaign.objects.filter(is_active=True).count(), 2)
+        response = self.client.post(reverse("campaign-activate", args=[other.id]))
+        self.assertRedirects(response, reverse("dashboard"))
+        self.campaign.refresh_from_db()
+        other.refresh_from_db()
+        self.assertFalse(self.campaign.is_active)
+        self.assertTrue(other.is_active)
+        self.assertEqual(SearchCampaign.objects.filter(is_active=True).count(), 1)
+
+    def test_dashboard_shows_only_the_active_campaigns_opportunities(self):
+        other_campaign = SearchCampaign.objects.create(name="Marketing 2027", goal="Internship")
+        Opportunity.objects.create(
+            campaign=self.campaign,
+            organization=Organization.objects.create(name="Japan Company"),
+            title="Japan Intern",
+        )
+        Opportunity.objects.create(
+            campaign=other_campaign,
+            organization=Organization.objects.create(name="Marketing Company"),
+            title="Marketing Intern",
+        )
+
+        self.client.post(reverse("campaign-activate", args=[self.campaign.id]))
+        japan_view = self.client.get(reverse("dashboard"))
+        self.assertContains(japan_view, "Japan Company")
+        self.assertNotContains(japan_view, "Marketing Company")
+        self.assertEqual(japan_view.context["tracked_count"], 1)
+
+        self.client.post(reverse("campaign-activate", args=[other_campaign.id]))
+        marketing_view = self.client.get(reverse("dashboard"))
+        self.assertContains(marketing_view, "Marketing Company")
+        self.assertNotContains(marketing_view, "Japan Company")
+        self.assertEqual(marketing_view.context["tracked_count"], 1)
+
+    def test_dashboard_without_an_active_campaign_hides_every_opportunity(self):
+        Opportunity.objects.create(
+            campaign=self.campaign,
+            organization=Organization.objects.create(name="Hidden Company"),
+            title="Hidden Intern",
+        )
+        SearchCampaign.objects.update(is_active=False)
+        response = self.client.get(reverse("dashboard"))
+        self.assertNotContains(response, "Hidden Company")
+        self.assertContains(response, "No search selected")
+        self.assertEqual(response.context["tracked_count"], 0)
+
+    def test_campaign_list_shows_saved_counts_and_which_search_is_in_use(self):
+        Opportunity.objects.create(
+            campaign=self.campaign,
+            organization=Organization.objects.create(name="Counted Company"),
+            title="Counted Intern",
+        )
+        response = self.client.get(reverse("campaign-list"))
+        self.assertContains(response, "In use")
+        self.assertContains(response, "1 saved")
+
 
 @override_settings(OPENAI_API_KEY="")
 class CandidateProfileTests(TestCase):
