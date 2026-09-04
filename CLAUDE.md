@@ -45,4 +45,27 @@ and the latest Git history before changing anything.
 5. Tell Francesco what changed in plain language.
 6. Make a Git checkpoint only after tests pass.
 
+## Outstanding work
+
+Known problems, roughly in priority order. Keep this list current: delete an item
+when it is fixed, add one when Francesco reports something that is not fixed today.
+
+- **Inbox items are never analysed by AI.** The Inbox accepts pasted vacancies,
+  links, screenshots and PDFs, but nothing turns them into researched
+  opportunities. Highest-value gap.
+- **Search quality is not good enough.** Francesco's words. Needs a concrete
+  example of a bad result before touching the prompts — searches cost real money
+  and cannot be re-run freely to test a guess.
+- **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
+  reverted in `d327198` / `6859116` after it crashed the running server. Redo it
+  carefully, and tell Francesco to restart the server before he looks.
+- **`ai.py` `_compact_app_context()` is not campaign-scoped.** Robert sees the 20
+  most recent opportunities across every campaign, not just the active one.
+
+## Restarting after a break
+
+Anything not written down is gone when a session is cleared. Before finishing a
+piece of work, put it somewhere durable: code and tests in Git, behaviour in
+`README.md`, unfinished problems in the list above.
+
 The OpenAI key is stored locally in `.env`. Never print, expose, or commit it.
