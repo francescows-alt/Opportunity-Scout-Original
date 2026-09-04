@@ -7,6 +7,7 @@ from threading import Thread
 import unicodedata
 from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
@@ -246,6 +247,12 @@ def toggle_favorite(request, opportunity_id):
     opportunity.is_favorite = not opportunity.is_favorite
     opportunity.save(update_fields=["is_favorite", "updated_at"])
     return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
+def _internal_host():
+    """Host header for the in-process client the background runners use. Django's
+    test runner allows only "testserver"; a local DEBUG server allows localhost."""
+    return settings.ALLOWED_HOSTS[0] if settings.ALLOWED_HOSTS else "localhost"
 
 
 def _update_search_job(job_id, **values):
@@ -965,45 +972,76 @@ def inbox(request):
     initial_campaign = SearchCampaign.objects.filter(is_active=True).first()
     form = QuickInboxForm(request.POST or None, request.FILES or None, initial={"campaign": initial_campaign})
     if request.method == "POST" and form.is_valid():
-        form.save()
-        messages.success(request, "Saved to the inbox. It is waiting for AI analysis; nothing was invented or submitted.")
+        item = form.save()
+        if _start_inbox_analysis(item):
+            messages.success(request, "Saved. Robert is researching it now; nothing is applied to or submitted.")
+        else:
+            messages.success(request, "Saved. Add the OpenAI key and restart to let Robert research it.")
         return redirect("inbox")
 
+    items = list(
+        InboxItem.objects.select_related("campaign", "opportunity", "opportunity__organization")
+        .prefetch_related("attachments")[:50]
+    )
+    for item in items:
+        item.card = _inbox_card(item)
     return render(request, "tracker/inbox.html", {
         "form": form,
-        "items": InboxItem.objects.select_related("campaign", "opportunity").prefetch_related("attachments")[:50],
-        "waiting_count": InboxItem.objects.filter(status=InboxItem.Status.WAITING).count(),
+        "items": items,
+        "waiting_count": InboxItem.objects.filter(
+            status__in=[InboxItem.Status.WAITING, InboxItem.Status.ANALYZING],
+        ).count(),
+        "is_analyzing": any(item.status == InboxItem.Status.ANALYZING for item in items),
     })
 
 
-@require_POST
-def inbox_analyze(request, item_id):
-    """Turn one saved inbox capture into a real opportunity in the active campaign.
+INBOX_VERDICT_LABELS = {
+    Opportunity.VerificationStatus.QUALIFIED: ("Eligible", "good"),
+    Opportunity.VerificationStatus.CLARIFY: ("Worth checking", "warn"),
+    Opportunity.VerificationStatus.UNSUITABLE: ("Not suitable", "bad"),
+    Opportunity.VerificationStatus.EXPIRED: ("Closed", "bad"),
+    Opportunity.VerificationStatus.UNVERIFIED: ("Unverified", "muted"),
+    Opportunity.VerificationStatus.PENDING: ("Not researched", "muted"),
+}
 
-    Deliberately shallow: this only establishes the employer, role and source URL.
-    The existing qualification pass then researches it like any other discovery,
-    so there is one research path in the app rather than two that can disagree.
-    """
-    item = get_object_or_404(InboxItem.objects.prefetch_related("attachments"), pk=item_id)
-    campaign = SearchCampaign.objects.filter(is_active=True).first()
-    if not campaign:
-        messages.error(request, "Activate a search campaign before Robert analyses the inbox.")
-        return redirect("campaign-list")
-    profile = CandidateProfile.objects.filter(pk=1).first()
-    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
-        messages.error(request, "Finish a basic profile first so Robert can judge whether this fits you.")
-        return redirect("profile")
 
-    try:
-        analysis = analyze_inbox_item(campaign, profile, item)
-    except AIUnavailable as error:
-        messages.error(request, str(error))
-        return redirect("inbox")
-    except Exception:
-        logger.exception("Inbox analysis failed for item %s", item.id)
-        messages.error(request, "Robert could not read that one. Nothing was changed; please try again.")
-        return redirect("inbox")
+def _inbox_card(item):
+    """One compact, honest line per capture: what it is, whether it is worth your
+    time, and the two or three facts that decide that. Everything else is noise."""
+    if item.status == InboxItem.Status.ANALYZING:
+        return {"label": "Researching…", "tone": "busy", "heading": _inbox_capture_title(item), "facts": []}
+    if item.status != InboxItem.Status.PROCESSED or not item.opportunity:
+        return {"label": "Not a vacancy", "tone": "muted", "heading": _inbox_capture_title(item), "facts": []}
 
+    opportunity = item.opportunity
+    label, tone = INBOX_VERDICT_LABELS.get(opportunity.verification_status, ("Saved", "muted"))
+    facts = [fact for fact in [
+        opportunity.location,
+        opportunity.internship_dates or opportunity.minimum_duration,
+        f"{opportunity.match_score}% match" if opportunity.match_score is not None else "",
+        opportunity.compensation if opportunity.compensation.lower() not in {"", "not stated"} else "",
+    ] if fact]
+    return {
+        "label": label,
+        "tone": tone,
+        "heading": f"{opportunity.organization.name} — {opportunity.title}",
+        "logo_url": opportunity.organization.logo_url,
+        "initial": opportunity.organization.name[:1].upper(),
+        "facts": facts[:3],
+    }
+
+
+def _inbox_capture_title(item):
+    if item.content.strip():
+        return item.content.strip()[:90]
+    if item.source_url:
+        return item.source_url
+    return "Uploaded files"
+
+
+def _save_inbox_reading(item, campaign, analysis):
+    """Store one reading. Returns the opportunity, or None when Robert could not
+    establish a real employer, role and source and needs Francesco to say more."""
     note = _plain_text(analysis.note)
     source_url = _strip_tracking(analysis.source_url)
     parsed = urlparse(source_url)
@@ -1014,8 +1052,7 @@ def inbox_analyze(request, item_id):
             analysis_note=note or "Robert could not establish the employer, the role or a real source link.",
             analyzed_at=timezone.now(),
         )
-        messages.info(request, note or "Robert needs more information before this can become an application.")
-        return redirect("inbox")
+        return None
 
     canonical_url = _canonicalize_url(source_url)
     fingerprint = _opportunity_fingerprint(analysis.company, analysis.title, analysis.location)
@@ -1028,66 +1065,120 @@ def inbox_analyze(request, item_id):
             analysis_note=f"Already saved as “{existing.title}”. Linked to the application you already have.",
             analyzed_at=timezone.now(),
         )
-        messages.info(request, f"You already had this one: {existing.organization.name} — {existing.title}.")
-        return redirect(f"{reverse('dashboard')}?selected={existing.id}")
+        return existing
 
+    with transaction.atomic():
+        organization = Organization.objects.filter(name__iexact=analysis.company.strip()).first()
+        if organization is None:
+            organization = Organization.objects.create(
+                name=analysis.company.strip(), location=analysis.location.strip(),
+            )
+        missing = "\n".join(f"Unknown: {fact}" for fact in analysis.missing_information)
+        fit_summary = _plain_text(analysis.fit_summary)
+        if missing:
+            fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
+        opportunity = Opportunity.objects.create(
+            # Robert's reading travels with the role, so a caveat raised while
+            # reading the inbox is not lost the moment you open the application.
+            notes=f"From your job inbox:\n{note}" if note else "",
+            campaign=campaign,
+            organization=organization,
+            title=analysis.title.strip(),
+            kind=analysis.kind,
+            location=analysis.location.strip(),
+            source_url=source_url,
+            canonical_url=canonical_url,
+            fingerprint=fingerprint,
+            job_description=analysis.description.strip(),
+            match_score=analysis.match_score,
+            fit_summary=fit_summary,
+            next_action=analysis.next_action.strip(),
+            candidate_fee_required=analysis.candidate_fee_required,
+            candidate_fee=analysis.candidate_fee.strip(),
+            compensation=analysis.compensation.strip(),
+            status=Opportunity.Status.DISCOVERED,
+            verification_status=(
+                Opportunity.VerificationStatus.UNSUITABLE if analysis.candidate_fee_required
+                else Opportunity.VerificationStatus.PENDING
+            ),
+            verified_at=timezone.now() if analysis.candidate_fee_required else None,
+        )
+        InboxItem.objects.filter(pk=item.pk).update(
+            status=InboxItem.Status.PROCESSED, opportunity=opportunity,
+            analysis_note=note, analyzed_at=timezone.now(),
+        )
+    return opportunity
+
+
+def _run_inbox_analysis(item_id):
+    """Read one capture, then research it properly before it lands in the list.
+
+    Runs in a background thread because reading plus full research takes most of
+    a minute, and Francesco should not be staring at a frozen page for it.
+    """
+    from django.test import Client
+
+    close_old_connections()
     try:
-        with transaction.atomic():
-            organization = Organization.objects.filter(name__iexact=analysis.company.strip()).first()
-            if organization is None:
-                organization = Organization.objects.create(
-                    name=analysis.company.strip(), location=analysis.location.strip(),
-                )
-            missing = "\n".join(f"Unknown: {fact}" for fact in analysis.missing_information)
-            fit_summary = _plain_text(analysis.fit_summary)
-            if missing:
-                fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
-            opportunity = Opportunity.objects.create(
-                # Robert's reading travels with the role, so a caveat raised while
-                # reading the inbox is not lost the moment you open the application.
-                notes=f"From your job inbox:\n{note}" if note else "",
-                campaign=campaign,
-                organization=organization,
-                title=analysis.title.strip(),
-                kind=analysis.kind,
-                location=analysis.location.strip(),
-                source_url=source_url,
-                canonical_url=canonical_url,
-                fingerprint=fingerprint,
-                job_description=analysis.description.strip(),
-                match_score=analysis.match_score,
-                fit_summary=fit_summary,
-                next_action=analysis.next_action.strip(),
-                candidate_fee_required=analysis.candidate_fee_required,
-                candidate_fee=analysis.candidate_fee.strip(),
-                compensation=analysis.compensation.strip(),
-                status=Opportunity.Status.DISCOVERED,
-                verification_status=(
-                    Opportunity.VerificationStatus.UNSUITABLE if analysis.candidate_fee_required
-                    else Opportunity.VerificationStatus.PENDING
-                ),
-                verified_at=timezone.now() if analysis.candidate_fee_required else None,
+        item = InboxItem.objects.prefetch_related("attachments").get(pk=item_id)
+        campaign = SearchCampaign.objects.filter(is_active=True).first()
+        profile = CandidateProfile.objects.filter(pk=1).first()
+        if not campaign or not profile:
+            InboxItem.objects.filter(pk=item_id).update(
+                status=InboxItem.Status.NEEDS_INPUT,
+                analysis_note="Activate a campaign and finish your profile, then try again.",
             )
-            InboxItem.objects.filter(pk=item.pk).update(
-                status=InboxItem.Status.PROCESSED, opportunity=opportunity,
-                analysis_note=note, analyzed_at=timezone.now(),
+            return
+        opportunity = _save_inbox_reading(item, campaign, _do_analyze_inbox_item(campaign, profile, item))
+        if opportunity and not opportunity.candidate_fee_required:
+            # Same research every discovery gets, so nothing lands half-known.
+            Client(HTTP_HOST=_internal_host()).post(
+                reverse("qualify-discoveries"), {"opportunity_ids": [opportunity.id]},
             )
+    except AIUnavailable as error:
+        InboxItem.objects.filter(pk=item_id).update(
+            status=InboxItem.Status.NEEDS_INPUT, analysis_note=str(error), analyzed_at=timezone.now(),
+        )
     except Exception:
-        logger.exception("Could not save the opportunity read from inbox item %s", item.id)
-        messages.error(request, "Robert read it but could not save it. Nothing was changed; please try again.")
-        return redirect("inbox")
+        logger.exception("Inbox analysis failed for item %s", item_id)
+        InboxItem.objects.filter(pk=item_id).update(
+            status=InboxItem.Status.NEEDS_INPUT, analyzed_at=timezone.now(),
+            analysis_note="Robert could not finish reading this one. Nothing was changed; press Analyse again.",
+        )
+    finally:
+        close_old_connections()
 
-    if analysis.candidate_fee_required:
-        messages.warning(
-            request,
-            f"{organization.name} — {analysis.title} charges the candidate a fee, so it is saved as not suitable.",
-        )
-    else:
-        messages.success(
-            request,
-            f"Added {organization.name} — {analysis.title}. Run research to fill in the full report.",
-        )
-    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+def _do_analyze_inbox_item(campaign, profile, item):
+    """Indirection so tests can patch the AI call without patching the runner."""
+    return analyze_inbox_item(campaign, profile, item)
+
+
+def _start_inbox_analysis(item):
+    """Mark the capture as being worked on and hand it to a background thread."""
+    if not is_configured():
+        return False
+    InboxItem.objects.filter(pk=item.pk).update(
+        status=InboxItem.Status.ANALYZING, analysis_note="", analyzed_at=None,
+    )
+    Thread(target=_run_inbox_analysis, args=(item.pk,), daemon=True).start()
+    return True
+
+
+@require_POST
+def inbox_analyze(request, item_id):
+    """Re-read one capture. Saving already starts this automatically."""
+    item = get_object_or_404(InboxItem, pk=item_id)
+    if not SearchCampaign.objects.filter(is_active=True).exists():
+        messages.error(request, "Activate a search campaign before Robert analyses the inbox.")
+        return redirect("campaign-list")
+    profile = CandidateProfile.objects.filter(pk=1).first()
+    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
+        messages.error(request, "Finish a basic profile first so Robert can judge whether this fits you.")
+        return redirect("profile")
+    if not _start_inbox_analysis(item):
+        messages.error(request, "Robert is not connected yet. Add the OpenAI key and restart.")
+    return redirect("inbox")
 
 
 @require_POST

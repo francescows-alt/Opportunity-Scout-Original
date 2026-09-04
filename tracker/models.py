@@ -319,6 +319,7 @@ class InboxItem(models.Model):
 
     class Status(models.TextChoices):
         WAITING = "waiting", "Waiting for AI analysis"
+        ANALYZING = "analyzing", "Robert is researching this"
         PROCESSED = "processed", "Added to applications"
         NEEDS_INPUT = "needs_input", "Needs more information"
 

@@ -8,7 +8,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .ai import DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch
+from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
@@ -806,6 +806,9 @@ class RobertTests(TestCase):
         self.assertIn("not connected", response.json()["error"])
 
 
+# No key, so saving never starts a real background analysis during tests. The one
+# test that needs the thread patches is_configured itself.
+@override_settings(OPENAI_API_KEY="")
 class InboxTests(TestCase):
     def setUp(self):
         self.campaign = SearchCampaign.objects.create(name="Japan 2027", goal="Internship")
@@ -829,29 +832,46 @@ class InboxTests(TestCase):
         self.assertContains(response, "Paste text, add a link, or upload at least one file.")
         self.assertFalse(InboxItem.objects.exists())
 
-    @patch("tracker.views.analyze_inbox_item")
-    def test_analysis_turns_a_pasted_vacancy_into_an_application(self, analyze):
+    def _analyse(self, item):
+        """Run the background reader inline, the way the thread would."""
+        from tracker.views import _run_inbox_analysis
+        _run_inbox_analysis(item.id)
+        item.refresh_from_db()
+        return item
+
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_analysis_turns_a_pasted_vacancy_into_an_application(self, analyze, qualify):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         item = InboxItem.objects.create(
             campaign=self.campaign, request_type=InboxItem.RequestType.JOB,
             content="Marketing internship in Tokyo",
         )
         analyze.return_value = _inbox_analysis()
-        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self._analyse(item)
 
         opportunity = Opportunity.objects.get()
-        self.assertRedirects(response, f"{reverse('dashboard')}?selected={opportunity.id}")
         self.assertEqual(opportunity.organization.name, "Nihon Growth")
         self.assertEqual(opportunity.campaign, self.campaign)
-        self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.PENDING)
         self.assertIn("Still to verify:", opportunity.fit_summary)
-        item.refresh_from_db()
         self.assertEqual(item.status, InboxItem.Status.PROCESSED)
         self.assertEqual(item.opportunity, opportunity)
         self.assertIsNotNone(item.analyzed_at)
 
-    @patch("tracker.views.analyze_inbox_item")
-    def test_analysis_cleans_the_link_and_keeps_roberts_caveat(self, analyze):
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_a_new_role_is_researched_before_it_lands(self, analyze, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB, content="A vacancy",
+        )
+        analyze.return_value = _inbox_analysis()
+        self._analyse(item)
+        self.assertEqual(qualify.call_count, 1)
+
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_analysis_cleans_the_link_and_keeps_roberts_caveat(self, analyze, qualify):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         item = InboxItem.objects.create(
             campaign=self.campaign, request_type=InboxItem.RequestType.JOB, content="A vacancy",
@@ -860,15 +880,16 @@ class InboxTests(TestCase):
             source_url="https://nihongrowth.example/careers/intern?gh_jid=42&utm_source=chatgpt.com&fbclid=xyz",
             note="Real posting, but the six-month minimum may not fit ([nihongrowth.example](https://nihongrowth.example/about)).",
         )
-        self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self._analyse(item)
 
         opportunity = Opportunity.objects.get()
         self.assertEqual(opportunity.source_url, "https://nihongrowth.example/careers/intern?gh_jid=42")
         self.assertIn("six-month minimum may not fit (nihongrowth.example)", opportunity.notes)
         self.assertNotIn("](", opportunity.notes)
 
-    @patch("tracker.views.analyze_inbox_item")
-    def test_analysis_asks_for_more_instead_of_guessing(self, analyze):
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_analysis_asks_for_more_instead_of_guessing(self, analyze, qualify):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         item = InboxItem.objects.create(
             campaign=self.campaign, request_type=InboxItem.RequestType.UNKNOWN,
@@ -878,16 +899,16 @@ class InboxTests(TestCase):
             is_opportunity=False, company="", source_url="",
             note="This is a note to yourself, not a vacancy. Which company was it?",
         )
-        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self._analyse(item)
 
-        self.assertRedirects(response, reverse("inbox"))
         self.assertFalse(Opportunity.objects.exists())
-        item.refresh_from_db()
         self.assertEqual(item.status, InboxItem.Status.NEEDS_INPUT)
         self.assertIn("Which company was it?", item.analysis_note)
+        self.assertEqual(qualify.call_count, 0)
 
-    @patch("tracker.views.analyze_inbox_item")
-    def test_analysis_links_a_role_you_already_saved(self, analyze):
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_analysis_links_a_role_you_already_saved(self, analyze, qualify):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         organization = Organization.objects.create(name="Nihon Growth")
         existing = Opportunity.objects.create(
@@ -900,29 +921,43 @@ class InboxTests(TestCase):
             source_url="https://nihongrowth.example/careers/marketing-intern",
         )
         analyze.return_value = _inbox_analysis()
-        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self._analyse(item)
 
-        self.assertRedirects(response, f"{reverse('dashboard')}?selected={existing.id}")
         self.assertEqual(Opportunity.objects.count(), 1)
-        item.refresh_from_db()
         self.assertEqual(item.status, InboxItem.Status.PROCESSED)
         self.assertEqual(item.opportunity, existing)
 
-    @patch("tracker.views.analyze_inbox_item")
-    def test_analysis_saves_a_fee_charging_program_as_unsuitable(self, analyze):
+    @patch("tracker.views.qualify_opportunities", side_effect=AIUnavailable("not connected"))
+    @patch("tracker.views._do_analyze_inbox_item")
+    def test_analysis_saves_a_fee_charging_program_as_unsuitable(self, analyze, qualify):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         item = InboxItem.objects.create(
             campaign=self.campaign, request_type=InboxItem.RequestType.JOB,
             source_url="https://placement.example/tokyo-program",
         )
         analyze.return_value = _inbox_analysis(
-            candidate_fee_required=True, candidate_fee="€2,400 program fee",
+            candidate_fee_required=True, candidate_fee="\u20ac2,400 program fee",
         )
-        self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self._analyse(item)
 
         opportunity = Opportunity.objects.get()
         self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.UNSUITABLE)
         self.assertIsNotNone(opportunity.verified_at)
+        # A fee-blocked role is already settled; do not pay to research it.
+        self.assertEqual(qualify.call_count, 0)
+
+    @patch("tracker.views.Thread")
+    @patch("tracker.views.is_configured", return_value=True)
+    def test_saving_starts_the_research_immediately(self, configured, thread):
+        response = self.client.post(reverse("inbox"), {
+            "campaign": self.campaign.id,
+            "request_type": InboxItem.RequestType.JOB,
+            "content": "Marketing internship in Tokyo",
+        })
+        self.assertRedirects(response, reverse("inbox"))
+        item = InboxItem.objects.get()
+        self.assertEqual(item.status, InboxItem.Status.ANALYZING)
+        self.assertEqual(thread.return_value.start.call_count, 1)
 
     def test_analysis_needs_an_active_campaign(self):
         SearchCampaign.objects.update(is_active=False)
@@ -933,7 +968,6 @@ class InboxTests(TestCase):
         self.assertRedirects(response, reverse("campaign-list"))
         item.refresh_from_db()
         self.assertEqual(item.status, InboxItem.Status.WAITING)
-
     def test_user_can_upload_opportunity_screenshot(self):
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
             screenshot = SimpleUploadedFile("job.png", b"fake screenshot bytes", content_type="image/png")
