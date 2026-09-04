@@ -12,6 +12,36 @@ from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch,
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
+def _research_report(opportunity_id, **overrides):
+    """A complete, boring research report. Tests override only the field they study."""
+    report = {
+        "opportunity_id": opportunity_id, "verdict": "clarify",
+        "company_description": "A company.", "company_location": "Tokyo, Japan",
+        "company_size": "11–50 employees", "company_country": "Japan",
+        "company_industry": "SaaS", "company_website": "https://example.com/",
+        "company_logo_url": "", "internship_location": "Tokyo, Japan",
+        "company_reputation": "Not established by reliable public sources.",
+        "cv_value": "Some relevant evidence.", "international_environment": "Not established.",
+        "growth_outlook": "Not established.", "work_culture": "Not established.",
+        "internship_dates": "Not stated", "internship_start_date_iso": None,
+        "internship_end_date_iso": None, "minimum_duration": "Not stated",
+        "work_arrangement": "Not stated", "application_deadline": "Not stated",
+        "application_deadline_iso": None, "japanese_requirement": "Not stated",
+        "posting_language": "English", "posting_language_note": "Written in English.",
+        "japanese_only_inferred": False, "visa_support": "Not stated",
+        "thesis_compatibility": "Requires confirmation",
+        "role_summary": "Supports growth work.", "match_score": 60,
+        "responsibilities": ["Support campaigns"],
+        "what_you_would_do": "Support marketing campaigns day to day for the team.",
+        "what_company_needs": "A student available for the internship period.",
+        "candidate_fee_required": False, "candidate_fee": "None found",
+        "compensation": "Not stated", "fit_summary": "Reasonable functional fit.",
+        "requirements": [], "sources": [], "next_action": "Confirm visa support.",
+    }
+    report.update(overrides)
+    return report
+
+
 @override_settings(OPENAI_API_KEY="")
 class SearchCampaignTests(TestCase):
     def test_campaign_list_page_loads(self):
@@ -390,6 +420,62 @@ class DashboardTests(TestCase):
         self.client.post(reverse("qualify-discoveries"))
         organization.refresh_from_db()
         self.assertEqual(organization.logo_url, "")
+
+    @patch("tracker.views.qualify_opportunities")
+    def test_research_does_not_overwrite_a_next_action_you_wrote(self, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Kept Note Co")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            source_url="https://example.com/jobs/growth-intern", match_score=70,
+            next_action="Email Professor Tanaka about supervision",
+            next_action_is_manual=True,
+        )
+        qualify.return_value = OpportunityResearchBatch(
+            summary="Checked the role.",
+            reports=[_research_report(opportunity.id, next_action="Confirm visa support.")],
+        )
+        self.client.post(reverse("qualify-discoveries"))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.next_action, "Email Professor Tanaka about supervision")
+        self.assertEqual(opportunity.match_score, 60)
+
+    @patch("tracker.views.qualify_opportunities")
+    def test_research_still_fills_a_next_action_robert_owns(self, qualify):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Robert Note Co")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            source_url="https://example.com/jobs/growth-intern", match_score=70,
+            next_action="An earlier Robert suggestion",
+        )
+        qualify.return_value = OpportunityResearchBatch(
+            summary="Checked the role.",
+            reports=[_research_report(opportunity.id, next_action="Confirm visa support.")],
+        )
+        self.client.post(reverse("qualify-discoveries"))
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.next_action, "Confirm visa support.")
+
+    def test_editing_the_next_action_protects_it_and_clearing_hands_it_back(self):
+        organization = Organization.objects.create(name="Edit Form Co")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Growth Intern",
+            next_action="A Robert suggestion",
+        )
+        fields = {
+            "campaign": self.campaign.id, "company_name": "Edit Form Co",
+            "title": "Growth Intern", "kind": Opportunity.Kind.ADVERTISED,
+            "status": Opportunity.Status.DISCOVERED,
+        }
+        url = reverse("opportunity-edit", args=[opportunity.id])
+        self.client.post(url, {**fields, "next_action": "Email Professor Tanaka"})
+        opportunity.refresh_from_db()
+        self.assertTrue(opportunity.next_action_is_manual)
+
+        self.client.post(url, {**fields, "next_action": ""})
+        opportunity.refresh_from_db()
+        self.assertFalse(opportunity.next_action_is_manual)
 
     @patch("tracker.views.qualify_opportunities")
     def test_one_bad_report_does_not_block_the_rest_of_the_batch(self, qualify):

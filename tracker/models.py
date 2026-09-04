@@ -240,6 +240,10 @@ class Opportunity(models.Model):
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.DISCOVERED, db_index=True)
     match_score = models.PositiveSmallIntegerField(blank=True, null=True)
     next_action = models.CharField(max_length=240, blank=True)
+    next_action_is_manual = models.BooleanField(
+        default=False,
+        help_text="Set when you write your own next action, so repeated research cannot overwrite it.",
+    )
     is_favorite = models.BooleanField(default=False, db_index=True)
     canonical_url = models.URLField(max_length=500, blank=True, db_index=True)
     fingerprint = models.CharField(max_length=64, blank=True, db_index=True)

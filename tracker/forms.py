@@ -249,6 +249,10 @@ class OpportunityForm(forms.ModelForm):
 
     def save(self, commit=True):
         opportunity = super().save(commit=False)
+        if "next_action" in self.changed_data:
+            # Francesco typed this himself, so later research must leave it alone.
+            # Clearing the box hands the field back to Robert.
+            opportunity.next_action_is_manual = bool(opportunity.next_action.strip())
         company_name = self.cleaned_data["company_name"].strip()
         organization = Organization.objects.filter(name__iexact=company_name).first()
         if organization is None:

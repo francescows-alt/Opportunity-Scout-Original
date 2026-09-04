@@ -598,7 +598,8 @@ def qualify_discoveries(request):
                     ]
                     opportunity.research_sources = safe_sources
                     opportunity.research_summary = batch.summary.strip()
-                    opportunity.next_action = report.next_action.strip()
+                    if not opportunity.next_action_is_manual:
+                        opportunity.next_action = report.next_action.strip()
                     opportunity.verified_at = timezone.now()
                     if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
                         opportunity.status = Opportunity.Status.QUALIFIED
