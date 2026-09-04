@@ -204,6 +204,12 @@ class OpportunityResearchBatch(BaseModel):
     reports: list[OpportunityResearch] = Field(max_length=8)
 
 
+# One deep single-internship research call: roughly eight web searches plus the
+# report. Replace with a measured figure once real runs have been recorded.
+RESEARCH_WEB_COST = Decimal("0.040000")
+RESEARCH_CONCURRENCY = 5
+
+
 def is_configured():
     return bool(settings.OPENAI_API_KEY and settings.OPENAI_API_KEY != "your-key-goes-here")
 
@@ -223,7 +229,10 @@ def _client():
     if not is_configured():
         raise AIUnavailable("OpenAI is not connected yet. Complete the one-time AI setup first.")
     _check_budget()
-    return OpenAI(api_key=settings.OPENAI_API_KEY)
+    # Without an explicit timeout the SDK waits 600s and retries twice, so one stuck
+    # call could hold a background research job for half an hour. Researching a
+    # single internship never legitimately takes two minutes.
+    return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=120.0, max_retries=1)
 
 
 def _record_text_usage(response, purpose):
@@ -442,16 +451,21 @@ Return only distinct, useful results. Do not apply, contact anyone, or claim tha
     return response.output_parsed
 
 
-def qualify_opportunities(campaign, profile, opportunities):
-    """Deeply verify a small batch of discoveries against source pages and profile evidence."""
+def research_one_opportunity(campaign, profile, opportunity):
+    """Research ONE internship, with the whole web-search budget to itself.
+
+    Eight opportunities used to share a single call: twelve web searches between
+    them, and a 10,000-token cap that truncated the reports before they could be
+    saved. That produced both the thin research and the hours-long hang.
+    """
     opportunity_data = [{
-        "opportunity_id": item.id,
-        "company": item.organization.name,
-        "title": item.title,
-        "location": item.location,
-        "source_url": item.source_url,
-        "initial_description": item.job_description,
-    } for item in opportunities]
+        "opportunity_id": opportunity.id,
+        "company": opportunity.organization.name,
+        "title": opportunity.title,
+        "location": opportunity.location,
+        "source_url": opportunity.source_url,
+        "initial_description": opportunity.job_description,
+    }]
     campaign_data = {
         field: str(getattr(campaign, field) or "")
         for field in [
@@ -464,9 +478,10 @@ def qualify_opportunities(campaign, profile, opportunities):
     response = _client().responses.parse(
         model=settings.OPENAI_CHAT_MODEL,
         tools=[{"type": "web_search"}],
-        max_tool_calls=12,
+        max_tool_calls=8,
         instructions=ROBERT_RULES + """
 Act as a rigorous job-verification and candidate-fit analyst. Open and investigate every supplied opportunity and search for corroborating official information.
+You are researching ONE internship and the entire search budget belongs to it. Use it. Cross-reference before you state a company fact: open the vacancy page, the official company website, and at least one independent source. A field left as "Not found" after a single search is a failure of effort, not a fact about the company.
 Be skeptical and realistic. Prestige must not inflate the score. Separate facts, reasonable inference, and unknowns. Check that the exact vacancy—not merely the company—still exists and is open.
 Return one report for every supplied opportunity_id. Prefer the vacancy page, official company website and official careers or immigration information. Every report must contain the useful source URLs you actually consulted.
 Classify verdict as: qualified when it is a credible strong fit; clarify when promising but key facts require confirmation; unsuitable when verified facts conflict materially; expired when a trustworthy source shows it is closed or past its deadline; unverified when the role/page cannot be verified.
@@ -493,12 +508,34 @@ Write next_action as one direct instruction of three to eight words.
             + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:10000]
         ),
         text_format=OpportunityResearchBatch,
-        max_output_tokens=10000,
+        max_output_tokens=4000,
         store=False,
     )
-    _record_text_usage(response, "qualification")
-    AIUsage.objects.create(purpose="qualification_web", estimated_cost_usd=Decimal("0.040000"))
-    return response.output_parsed
+    _record_text_usage(response, "research_one")
+    AIUsage.objects.create(purpose="research_one_web", estimated_cost_usd=RESEARCH_WEB_COST)
+    batch = response.output_parsed
+    if not batch or not batch.reports:
+        raise AIUnavailable("Robert could not produce a report for this internship.")
+    report = batch.reports[0]
+    # The model echoes back whatever id it was given; trust our own row, not its copy.
+    report.opportunity_id = opportunity.id
+    return report
+
+
+def qualify_opportunities(campaign, profile, opportunities):
+    """Research each supplied opportunity on its own, then return them as one batch.
+
+    Kept so the manual retry path keeps one calling convention. The depth now comes
+    from each opportunity getting its own call underneath.
+    """
+    reports = [
+        research_one_opportunity(campaign, profile, opportunity)
+        for opportunity in opportunities
+    ]
+    return OpportunityResearchBatch(
+        summary=f"Researched {len(reports)} opportunit{'y' if len(reports) == 1 else 'ies'} individually.",
+        reports=reports,
+    )
 
 
 def transcribe(uploaded_file, duration_seconds=0):

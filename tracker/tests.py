@@ -9,7 +9,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch, _known_role_labels, _quality_feedback
+from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearch, OpportunityResearchBatch, _known_role_labels, _quality_feedback
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
@@ -322,28 +322,78 @@ class DashboardTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("no discoveries waiting", response.json()["error"])
 
-    @patch("django.test.Client")
-    def test_research_only_loops_through_all_pending_batches(self, client_class):
+    @patch("tracker.views.research_one_opportunity")
+    def test_research_runs_one_call_per_internship(self, research_one):
         from .views import _run_research_only
 
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         organization = Organization.objects.create(name="Needs Research Co")
         for number in range(10):
             Opportunity.objects.create(campaign=self.campaign, organization=organization, title=f"Intern {number}")
         job = SearchJob.objects.create(campaign=self.campaign)
 
-        def simulate_research(url, data=None):
-            chunk_ids = [int(value) for value in data["opportunity_ids"]]
-            Opportunity.objects.filter(pk__in=chunk_ids).update(verified_at=timezone.now())
-            return self.client.get(reverse("dashboard"))
-
-        client_class.return_value.post.side_effect = simulate_research
+        research_one.side_effect = lambda campaign, profile, opportunity: OpportunityResearch(
+            **_research_report(opportunity.id)
+        )
         _run_research_only(job.id)
+
         job.refresh_from_db()
         self.assertEqual(job.status, SearchJob.Status.COMPLETE)
         self.assertEqual(job.progress, 100)
-        self.assertEqual(client_class.return_value.post.call_count, 2)
+        # One API call per internship — never eight sharing a single search budget.
+        self.assertEqual(research_one.call_count, 10)
         self.assertEqual(Opportunity.objects.filter(verified_at__isnull=False).count(), 10)
         self.assertNotIn("still needing retry", job.message)
+
+    @patch("tracker.views.research_one_opportunity")
+    def test_one_failed_internship_does_not_lose_the_others(self, research_one):
+        from .views import _run_research_only
+
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Needs Research Co")
+        for number in range(5):
+            Opportunity.objects.create(campaign=self.campaign, organization=organization, title=f"Intern {number}")
+        job = SearchJob.objects.create(campaign=self.campaign)
+        doomed = Opportunity.objects.order_by("id").first()
+
+        def research(campaign, profile, opportunity):
+            if opportunity.id == doomed.id:
+                raise RuntimeError("this one internship failed")
+            return OpportunityResearch(**_research_report(opportunity.id))
+
+        research_one.side_effect = research
+        _run_research_only(job.id)
+
+        job.refresh_from_db()
+        self.assertEqual(job.status, SearchJob.Status.COMPLETE)
+        self.assertEqual(Opportunity.objects.filter(verified_at__isnull=False).count(), 4)
+        self.assertIn("still needing retry", job.message)
+
+    @patch("tracker.views.research_one_opportunity")
+    def test_reaching_the_budget_stops_the_run_and_says_so(self, research_one):
+        from .views import _run_research_only
+
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Needs Research Co")
+        for number in range(5):
+            Opportunity.objects.create(campaign=self.campaign, organization=organization, title=f"Intern {number}")
+        job = SearchJob.objects.create(campaign=self.campaign)
+        research_one.side_effect = AIUnavailable("Robert paused because the monthly safety budget was reached.")
+
+        _run_research_only(job.id)
+
+        job.refresh_from_db()
+        self.assertIn("monthly safety budget", job.message)
+
+    def test_a_silent_job_is_failed_by_the_status_endpoint(self):
+        job = SearchJob.objects.create(campaign=self.campaign, status=SearchJob.Status.RUNNING, stage="researching")
+        SearchJob.objects.filter(pk=job.id).update(updated_at=timezone.now() - timedelta(minutes=30))
+
+        payload = self.client.get(reverse("search-job-status", args=[job.id])).json()
+
+        # The page heals itself; he never has to click Start to clear a dead job.
+        self.assertEqual(payload["status"], SearchJob.Status.FAILED)
+        self.assertIn("stopped responding", payload["message"])
 
     def test_selected_role_shows_priority_banner_and_score_tone(self):
         organization = Organization.objects.create(name="Excellent Company")

@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import timedelta
 from pathlib import Path
 import re
@@ -18,7 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, analyze_inbox_item, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, robert_reply, transcribe
+from .ai import AIUnavailable, RESEARCH_CONCURRENCY, RESEARCH_WEB_COST, analyze_inbox_item, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, research_one_opportunity, robert_reply, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -312,19 +313,18 @@ def _run_complete_search(job_id):
         )
 
         total = len(new_ids)
-        for offset in range(0, total, 8):
-            chunk = new_ids[offset:offset + 8]
-            _update_search_job(
-                job_id, stage="researching",
-                progress=48 + round(38 * offset / max(total, 1)),
-                message=f"Deep research: {min(offset + 1, total)}–{min(offset + len(chunk), total)} of {total}…",
-            )
-            client.post(reverse("qualify-discoveries"), {"opportunity_ids": chunk})
+        profile = CandidateProfile.objects.filter(pk=1).first()
+        if total and profile is None:
+            raise RuntimeError("Complete your profile before Robert researches.")
+        researched, budget_error = _research_concurrently(
+            job_id, job.campaign, profile, new_ids, progress_start=48, progress_span=38,
+        )
 
-        researched = Opportunity.objects.filter(pk__in=new_ids, verified_at__isnull=False).count()
         _update_search_job(job_id, stage="saving", progress=92, message="Saving reports and priority signals…", researched_count=researched)
         incomplete = total - researched
-        if incomplete:
+        if budget_error:
+            final_message = budget_error
+        elif incomplete:
             final_message = f"Finished with {incomplete} report{'s' if incomplete != 1 else ''} needing retry."
         else:
             final_message = f"Complete: {researched} researched, {cycle.duplicate_count} duplicates blocked, {cycle.fee_blocked_count} fee programs excluded."
@@ -336,6 +336,60 @@ def _run_complete_search(job_id):
         )
     finally:
         close_old_connections()
+
+
+def _research_concurrently(job_id, campaign, profile, opportunity_ids, progress_start, progress_span):
+    """Research each internship in its own API call, five running at a time.
+
+    Workers only call the API and hand back a report. Every database write happens
+    here on the calling thread, because SQLite will not take five concurrent
+    writers. One internship failing costs that internship and nothing else.
+
+    Returns (researched_count, budget_error) — budget_error is set when Robert
+    paused himself, which is the one failure worth stopping the whole run for.
+    """
+    opportunities = {
+        item.id: item for item in
+        Opportunity.objects.select_related("organization").filter(pk__in=opportunity_ids)
+    }
+    ordered = [opportunities[key] for key in opportunity_ids if key in opportunities]
+    total = len(ordered)
+    summary = f"Researched individually on {timezone.localdate().isoformat()}."
+    researched = 0
+    done = 0
+    budget_error = None
+
+    def work(opportunity):
+        # Each worker gets its own connection state; it only reads.
+        close_old_connections()
+        return research_one_opportunity(campaign, profile, opportunity)
+
+    with ThreadPoolExecutor(max_workers=RESEARCH_CONCURRENCY) as pool:
+        futures = {pool.submit(work, item): item for item in ordered}
+        for future in as_completed(futures):
+            opportunity = futures[future]
+            done += 1
+            if future.cancelled():
+                # Dropped on purpose after the budget stop; not a failure to report.
+                continue
+            try:
+                _save_research_report(opportunity, future.result(), summary)
+                researched += 1
+            except AIUnavailable as error:
+                # Almost always the monthly safety budget. Stop asking for more.
+                budget_error = str(error)
+                for pending in futures:
+                    pending.cancel()
+            except Exception:
+                logger.exception("Research failed for opportunity %s", opportunity.id)
+            # Heartbeat after every internship, so a dead job is visibly dead.
+            _update_search_job(
+                job_id, stage="researching",
+                progress=progress_start + round(progress_span * done / max(total, 1)),
+                message=f"Researched {done} of {total}: {opportunity.organization.name}"[:300],
+                researched_count=researched,
+            )
+    return researched, budget_error
 
 
 def _require_campaign_and_profile():
@@ -350,16 +404,31 @@ def _require_campaign_and_profile():
     return campaign, profile, None
 
 
-def _launch_background_job(campaign, runner):
-    """Reuse one active SearchJob if one is already running, otherwise start a new
-    background thread. Shared by the full search and the research-only retry."""
-    stale_before = timezone.now() - timedelta(minutes=30)
-    SearchJob.objects.filter(
+STALE_JOB_MINUTES = 10
+
+
+def _expire_stale_jobs():
+    """Fail any job that has not reported progress recently.
+
+    The runner now heartbeats after every single internship, so silence really
+    does mean the thread is gone. This runs from the status endpoint as well as at
+    launch, so a dead job stops claiming to be running without Francesco having to
+    click anything.
+    """
+    stale_before = timezone.now() - timedelta(minutes=STALE_JOB_MINUTES)
+    return SearchJob.objects.filter(
         status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING], updated_at__lt=stale_before,
     ).update(
         status=SearchJob.Status.FAILED, stage="failed", progress=100,
-        message="Previous search expired safely; start a new one.", updated_at=timezone.now(),
+        message="Robert stopped responding, so this run was ended. Nothing was damaged; start a new one.",
+        updated_at=timezone.now(),
     )
+
+
+def _launch_background_job(campaign, runner):
+    """Reuse one active SearchJob if one is already running, otherwise start a new
+    background thread. Shared by the full search and the research-only retry."""
+    _expire_stale_jobs()
     active = SearchJob.objects.filter(status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING]).order_by("-created_at").first()
     if active:
         return JsonResponse({"job_id": active.id, "status_url": reverse("search-job-status", args=[active.id])})
@@ -378,9 +447,7 @@ def start_complete_search(request):
 
 def _run_research_only(job_id):
     """Finish deep research on every opportunity still incomplete for this campaign,
-    looping in batches of 8 until none remain — unlike a single manual retry click."""
-    from django.test import Client
-
+    five at a time until none remain — unlike a single manual retry click."""
     close_old_connections()
     try:
         job = SearchJob.objects.select_related("campaign").get(pk=job_id)
@@ -397,20 +464,18 @@ def _run_research_only(job_id):
             found_count=total, opportunity_ids=pending_ids,
         )
 
-        client = Client(HTTP_HOST="localhost")
-        for offset in range(0, total, 8):
-            chunk = pending_ids[offset:offset + 8]
-            _update_search_job(
-                job_id, stage="researching",
-                progress=8 + round(84 * offset / max(total, 1)),
-                message=f"Deep research: {min(offset + 1, total)}–{min(offset + len(chunk), total)} of {total}…",
-            )
-            client.post(reverse("qualify-discoveries"), {"opportunity_ids": chunk})
+        profile = CandidateProfile.objects.filter(pk=1).first()
+        if total and profile is None:
+            raise RuntimeError("Complete your profile before Robert researches.")
+        researched, budget_error = _research_concurrently(
+            job_id, job.campaign, profile, pending_ids, progress_start=8, progress_span=84,
+        )
 
-        researched = Opportunity.objects.filter(pk__in=pending_ids, verified_at__isnull=False).count()
         _update_search_job(job_id, stage="saving", progress=95, message="Saving reports…", researched_count=researched)
         incomplete = total - researched
-        if incomplete:
+        if budget_error:
+            final_message = budget_error
+        elif incomplete:
             final_message = f"Finished with {incomplete} report{'s' if incomplete != 1 else ''} still needing retry."
         else:
             final_message = f"Complete: {researched} report{'s' if researched != 1 else ''} researched."
@@ -436,6 +501,8 @@ def start_research_only(request):
 
 
 def search_job_status(request, job_id):
+    # Heal a dead job here too, so the page stops showing "running" on its own.
+    _expire_stale_jobs()
     job = get_object_or_404(SearchJob, pk=job_id)
     return JsonResponse({
         "status": job.status, "stage": job.stage, "progress": job.progress,
@@ -581,6 +648,93 @@ def discover_internships(request):
     return redirect("dashboard")
 
 
+def _save_research_report(opportunity, report, summary):
+    """Write one research report onto its opportunity.
+
+    Shared by the manual retry view and the background runner, so the two can
+    never drift apart. Raises on failure; callers decide what a failure means.
+    """
+    with transaction.atomic():
+        website = report.company_website.strip()
+        parsed_website = urlparse(website)
+        if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
+            opportunity.organization.website = website
+        logo_url = report.company_logo_url.strip()
+        if _looks_like_logo_image(logo_url):
+            opportunity.organization.logo_url = logo_url
+        if report.company_location.strip():
+            opportunity.organization.location = report.company_location.strip()
+        opportunity.organization.save(update_fields=["website", "logo_url", "location", "updated_at"])
+
+        safe_sources = []
+        for source in report.sources:
+            parsed_source = urlparse(source.url.strip())
+            if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
+                safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
+        opportunity.verification_status = (
+            Opportunity.VerificationStatus.UNSUITABLE
+            if report.candidate_fee_required else report.verdict
+        )
+        opportunity.company_description = report.company_description.strip()
+        opportunity.company_location = report.company_location.strip()
+        opportunity.company_size = report.company_size.strip()
+        opportunity.company_country = report.company_country.strip()
+        opportunity.company_industry = report.company_industry.strip()
+        opportunity.company_reputation = report.company_reputation.strip()
+        opportunity.cv_value = report.cv_value.strip()
+        opportunity.international_environment = report.international_environment.strip()
+        opportunity.growth_outlook = report.growth_outlook.strip()
+        opportunity.work_culture = report.work_culture.strip()
+        opportunity.location = report.internship_location.strip() or opportunity.location
+        opportunity.internship_dates = report.internship_dates.strip()
+        opportunity.internship_start_date = report.internship_start_date_iso
+        opportunity.internship_end_date = report.internship_end_date_iso
+        opportunity.minimum_duration = report.minimum_duration.strip()
+        opportunity.application_deadline_text = report.application_deadline.strip()
+        opportunity.deadline = report.application_deadline_iso
+        opportunity.responsibilities = report.responsibilities
+        opportunity.what_you_would_do = report.what_you_would_do.strip()
+        opportunity.what_company_needs = report.what_company_needs.strip()
+        opportunity.candidate_fee_required = report.candidate_fee_required
+        opportunity.candidate_fee = report.candidate_fee.strip()
+        opportunity.compensation = report.compensation.strip()
+        opportunity.work_arrangement = report.work_arrangement.strip()
+        opportunity.japanese_requirement = report.japanese_requirement.strip()
+        opportunity.posting_language = report.posting_language
+        opportunity.posting_language_note = report.posting_language_note.strip()
+        opportunity.japanese_only_inferred = report.japanese_only_inferred
+        opportunity.visa_support = report.visa_support.strip()
+        opportunity.thesis_compatibility = report.thesis_compatibility.strip()
+        opportunity.job_description = report.role_summary.strip() or opportunity.job_description
+        opportunity.match_score = report.match_score
+        opportunity.fit_summary = report.fit_summary.strip()
+        opportunity.requirements_assessment = [
+            item.model_dump() for item in report.requirements
+            if _is_concrete_qualification(item.requirement)
+        ]
+        opportunity.research_sources = safe_sources
+        opportunity.research_summary = summary.strip()
+        if not opportunity.next_action_is_manual:
+            opportunity.next_action = report.next_action.strip()
+        opportunity.verified_at = timezone.now()
+        if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
+            opportunity.status = Opportunity.Status.QUALIFIED
+        opportunity.save(update_fields=[
+            "verification_status", "company_description", "company_location", "company_size",
+            "company_country", "company_industry",
+            "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
+            "location", "internship_dates", "internship_start_date", "internship_end_date",
+            "minimum_duration", "work_arrangement", "japanese_requirement",
+            "posting_language", "posting_language_note", "japanese_only_inferred",
+            "application_deadline_text", "deadline", "responsibilities",
+            "what_you_would_do", "what_company_needs", "candidate_fee_required",
+            "candidate_fee", "compensation",
+            "visa_support", "thesis_compatibility", "job_description", "match_score",
+            "fit_summary", "requirements_assessment", "research_sources", "research_summary",
+            "next_action", "verified_at", "status", "updated_at",
+        ])
+
+
 @require_POST
 def qualify_discoveries(request):
     campaign = SearchCampaign.objects.filter(is_active=True).first()
@@ -611,85 +765,7 @@ def qualify_discoveries(request):
             if opportunity is None:
                 continue
             try:
-                with transaction.atomic():
-                    website = report.company_website.strip()
-                    parsed_website = urlparse(website)
-                    if parsed_website.scheme in {"http", "https"} and parsed_website.netloc:
-                        opportunity.organization.website = website
-                    logo_url = report.company_logo_url.strip()
-                    if _looks_like_logo_image(logo_url):
-                        opportunity.organization.logo_url = logo_url
-                    if report.company_location.strip():
-                        opportunity.organization.location = report.company_location.strip()
-                    opportunity.organization.save(update_fields=["website", "logo_url", "location", "updated_at"])
-
-                    safe_sources = []
-                    for source in report.sources:
-                        parsed_source = urlparse(source.url.strip())
-                        if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
-                            safe_sources.append({"title": source.title.strip(), "url": source.url.strip()})
-                    opportunity.verification_status = (
-                        Opportunity.VerificationStatus.UNSUITABLE
-                        if report.candidate_fee_required else report.verdict
-                    )
-                    opportunity.company_description = report.company_description.strip()
-                    opportunity.company_location = report.company_location.strip()
-                    opportunity.company_size = report.company_size.strip()
-                    opportunity.company_country = report.company_country.strip()
-                    opportunity.company_industry = report.company_industry.strip()
-                    opportunity.company_reputation = report.company_reputation.strip()
-                    opportunity.cv_value = report.cv_value.strip()
-                    opportunity.international_environment = report.international_environment.strip()
-                    opportunity.growth_outlook = report.growth_outlook.strip()
-                    opportunity.work_culture = report.work_culture.strip()
-                    opportunity.location = report.internship_location.strip() or opportunity.location
-                    opportunity.internship_dates = report.internship_dates.strip()
-                    opportunity.internship_start_date = report.internship_start_date_iso
-                    opportunity.internship_end_date = report.internship_end_date_iso
-                    opportunity.minimum_duration = report.minimum_duration.strip()
-                    opportunity.application_deadline_text = report.application_deadline.strip()
-                    opportunity.deadline = report.application_deadline_iso
-                    opportunity.responsibilities = report.responsibilities
-                    opportunity.what_you_would_do = report.what_you_would_do.strip()
-                    opportunity.what_company_needs = report.what_company_needs.strip()
-                    opportunity.candidate_fee_required = report.candidate_fee_required
-                    opportunity.candidate_fee = report.candidate_fee.strip()
-                    opportunity.compensation = report.compensation.strip()
-                    opportunity.work_arrangement = report.work_arrangement.strip()
-                    opportunity.japanese_requirement = report.japanese_requirement.strip()
-                    opportunity.posting_language = report.posting_language
-                    opportunity.posting_language_note = report.posting_language_note.strip()
-                    opportunity.japanese_only_inferred = report.japanese_only_inferred
-                    opportunity.visa_support = report.visa_support.strip()
-                    opportunity.thesis_compatibility = report.thesis_compatibility.strip()
-                    opportunity.job_description = report.role_summary.strip() or opportunity.job_description
-                    opportunity.match_score = report.match_score
-                    opportunity.fit_summary = report.fit_summary.strip()
-                    opportunity.requirements_assessment = [
-                        item.model_dump() for item in report.requirements
-                        if _is_concrete_qualification(item.requirement)
-                    ]
-                    opportunity.research_sources = safe_sources
-                    opportunity.research_summary = batch.summary.strip()
-                    if not opportunity.next_action_is_manual:
-                        opportunity.next_action = report.next_action.strip()
-                    opportunity.verified_at = timezone.now()
-                    if opportunity.verification_status == Opportunity.VerificationStatus.QUALIFIED:
-                        opportunity.status = Opportunity.Status.QUALIFIED
-                    opportunity.save(update_fields=[
-                        "verification_status", "company_description", "company_location", "company_size",
-                        "company_country", "company_industry",
-                        "company_reputation", "cv_value", "international_environment", "growth_outlook", "work_culture",
-                        "location", "internship_dates", "internship_start_date", "internship_end_date",
-                        "minimum_duration", "work_arrangement", "japanese_requirement",
-                        "posting_language", "posting_language_note", "japanese_only_inferred",
-                        "application_deadline_text", "deadline", "responsibilities",
-                        "what_you_would_do", "what_company_needs", "candidate_fee_required",
-                        "candidate_fee", "compensation",
-                        "visa_support", "thesis_compatibility", "job_description", "match_score",
-                        "fit_summary", "requirements_assessment", "research_sources", "research_summary",
-                        "next_action", "verified_at", "status", "updated_at",
-                    ])
+                _save_research_report(opportunity, report, batch.summary)
             except Exception:
                 logger.exception(
                     "Skipped research report for opportunity %s after a save error", report.opportunity_id,

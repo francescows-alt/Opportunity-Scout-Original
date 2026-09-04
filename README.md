@@ -43,7 +43,8 @@ The application runs only while that terminal command is active. Press
 - Keep a record of what each search returned and what was filtered out, and mark
   any result good or bad. Every later search is told about those verdicts, so the
   searches get more tailored to you each time you use them
-- Research vacancy language, timing, company facts, qualifications, and fit
+- Research each internship in its own deep pass, five running at a time, so every
+  company gets a full set of web searches instead of sharing one with seven others
 - Build campaigns conversationally with Robert, then edit every setting manually
 - Ask Robert for hiring advice from anywhere in the app
 - Record reliable dictation and transcribe it into important text areas
@@ -57,7 +58,7 @@ only when the user starts them; future scheduling and email sync are not built y
 Robert and dictation use the OpenAI API. API billing is separate from a ChatGPT
 or Codex subscription, although you can sign in with the same OpenAI account.
 
-1. Add $5 of prepaid API credit at <https://platform.openai.com/settings/organization/billing/overview>.
+1. Add $10 of prepaid API credit at <https://platform.openai.com/settings/organization/billing/overview>.
 2. Turn automatic recharge off if you want the simplest spending protection.
 3. Create a secret key at <https://platform.openai.com/api-keys>.
 4. In the project terminal, run `cp .env.example .env`.
@@ -65,5 +66,5 @@ or Codex subscription, although you can sign in with the same OpenAI account.
 6. Stop and restart the local server.
 
 Never paste the secret key into chat. The real `.env` is ignored by Git. The app
-also pauses its own AI calls when its estimated monthly usage reaches $5; this is
+also pauses its own AI calls when its estimated monthly usage reaches $9; this is
 a second safety guard, not a substitute for checking the OpenAI billing page.

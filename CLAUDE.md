@@ -90,8 +90,12 @@ when it is fixed, add one when Francesco reports something that is not fixed tod
   search as USER VERDICTS. Each search now learns from the last. Still do not
   guess at prompt wording — read his flags first.
 - **`max_tool_calls=8` versus "up to 12 results"** in `ai.py` `research_internships()`.
-  Eight web searches cannot support twelve well-sourced findings. Francesco has
-  not yet chosen a number; raising it raises the per-search cost, so it is his call.
+  This is the DISCOVERY call only; research was fixed separately. Eight web
+  searches cannot support twelve well-sourced findings. Raising it raises the
+  per-search cost, so it is his call.
+- **Research cost is estimated, not measured.** `RESEARCH_WEB_COST` in `ai.py` is
+  a guess of $0.04 per internship. Replace it with a real figure once a deep run
+  has happened, and tell him what it actually cost.
 - **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
   reverted in `d327198` / `6859116` after it crashed the running server. Redo it
   carefully, and tell Francesco to restart the server before he looks.
