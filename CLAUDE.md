@@ -28,8 +28,20 @@ yourself, the same day, without being asked.
 ## Communication
 
 - Lead with the blocker, limitation or risk in the FIRST line. Never bury it.
-- Default to under 200 words. Write a long report only when Francesco asks.
+- Be concise. Default to under 150 words. Long reports only when he asks.
 - Say what you cannot verify BEFORE doing the work, not afterwards.
+
+## Do not ask permission
+
+Run every command and make every ordinary change without asking, then report what
+you did. Stop and ask for only two things:
+
+1. **Spending money** — a Robert search, research run or inbox analysis. His click.
+2. **Design direction** — a visual or product taste decision that is genuinely his.
+
+Commands, refactors, migrations, fixes, tests and commits: just do them. The
+safety rules are separate and never relax — never read or print `.env`, never
+apply, email or contact anyone.
 
 ## Verification
 

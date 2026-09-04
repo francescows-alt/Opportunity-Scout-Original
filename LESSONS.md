@@ -82,14 +82,27 @@ default. Say what you cannot verify *before* doing the work, not after.
 ## 2026-09-04 — Asking permission for routine commands
 
 **What happened.** I kept pausing for approval on ordinary project commands —
-`manage.py test`, `makemigrations`, `git status`. Francesco, twice, the second
-time in capitals: *"i accept every command cmon"* / *"ALWAYS ALLOW BASH COMMANDS
-FROM NOW ON REMEMBER"*.
+`manage.py test`, `makemigrations`, `git status` — and ended messages asking
+whether to proceed. Francesco, three times, escalating: *"i accept every command
+cmon"* → *"ALWAYS ALLOW BASH COMMANDS FROM NOW ON REMEMBER"* → *"NEVER ASK FOR
+PERMISSION TO DO CHANGES UNLESS MAJOR PAYMENT OR DESIGN ONES JUST DO EVERY BASH
+COMMAND NO NEED FOR PERMISSION!"*
 
-**Rule now.** Run project commands without asking. This does not touch the
-standing safety rules, which are his and stay: never read or print `.env`, never
-trigger a paid Robert search without explicit approval, never apply, email or
-contact anyone.
+**Rule now.** Run every command and make every ordinary change without asking.
+Finish the work, then report what was done.
+
+Stop and ask for **only two** things:
+1. **Money** — anything that spends real API credit, such as a Robert search,
+   a research run or an inbox analysis. His click, not yours.
+2. **Design direction** — a visual or product decision that is genuinely his
+   taste, not a technical call.
+
+Everything else — commands, refactors, migrations, bug fixes, tests, commits —
+just do. The standing safety rules are separate and never relax: never read or
+print `.env`, never apply, email or contact anyone.
+
+**Also:** be concise. *"REMEMBER: EXPLAIN CONCISELY!"* Short paragraphs, plain
+words, lead with the point. He is a beginner at software, not slow.
 
 ---
 
