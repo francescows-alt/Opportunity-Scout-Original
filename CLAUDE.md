@@ -37,6 +37,9 @@ Run every command and make every ordinary change without asking, then report wha
 you did. Stop and ask for only two things:
 
 1. **Spending money** — a Robert search, research run or inbox analysis. His click.
+   Never infer this from "make it work", "fix it", "go" or "just do everything".
+   Those authorise building and mocked tests, never a real paid call. Build the
+   feature, test it with mocks, then hand him the button.
 2. **Design direction** — a visual or product taste decision that is genuinely his.
 
 Commands, refactors, migrations, fixes, tests and commits: just do them. The
