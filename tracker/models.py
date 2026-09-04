@@ -328,6 +328,11 @@ class InboxItem(models.Model):
     source_url = models.URLField(blank=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.WAITING, db_index=True)
     opportunity = models.ForeignKey(Opportunity, on_delete=models.SET_NULL, blank=True, null=True, related_name="inbox_sources")
+    analysis_note = models.TextField(
+        blank=True,
+        help_text="What Robert concluded, or the question he needs answered before this can become an application.",
+    )
+    analyzed_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

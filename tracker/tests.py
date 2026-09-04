@@ -8,8 +8,25 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .ai import DocumentProfileAnalysis, EvidenceItem, InternshipDiscoveryBatch, OpportunityResearchBatch
+from .ai import DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
+
+
+def _inbox_analysis(**overrides):
+    """A usable inbox reading. Tests override only the field they study."""
+    values = {
+        "is_opportunity": True, "needs_more_information": False, "note": "Read the employer page.",
+        "company": "Nihon Growth", "title": "Marketing Intern", "kind": "advertised",
+        "location": "Tokyo, Japan",
+        "source_url": "https://nihongrowth.example/careers/marketing-intern",
+        "description": "Supports the marketing team in Tokyo.", "match_score": 72,
+        "fit_summary": "Fits the international business direction.",
+        "missing_information": ["Visa support"], "candidate_fee_required": False,
+        "candidate_fee": "None found", "compensation": "Not stated",
+        "next_action": "Confirm the internship dates.",
+    }
+    values.update(overrides)
+    return InboxAnalysis(**values)
 
 
 def _research_report(opportunity_id, **overrides):
@@ -811,6 +828,94 @@ class InboxTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Paste text, add a link, or upload at least one file.")
         self.assertFalse(InboxItem.objects.exists())
+
+    @patch("tracker.views.analyze_inbox_item")
+    def test_analysis_turns_a_pasted_vacancy_into_an_application(self, analyze):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB,
+            content="Marketing internship in Tokyo",
+        )
+        analyze.return_value = _inbox_analysis()
+        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+
+        opportunity = Opportunity.objects.get()
+        self.assertRedirects(response, f"{reverse('dashboard')}?selected={opportunity.id}")
+        self.assertEqual(opportunity.organization.name, "Nihon Growth")
+        self.assertEqual(opportunity.campaign, self.campaign)
+        self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.PENDING)
+        self.assertIn("Still to verify:", opportunity.fit_summary)
+        item.refresh_from_db()
+        self.assertEqual(item.status, InboxItem.Status.PROCESSED)
+        self.assertEqual(item.opportunity, opportunity)
+        self.assertIsNotNone(item.analyzed_at)
+
+    @patch("tracker.views.analyze_inbox_item")
+    def test_analysis_asks_for_more_instead_of_guessing(self, analyze):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.UNKNOWN,
+            content="saw something interesting on a poster",
+        )
+        analyze.return_value = _inbox_analysis(
+            is_opportunity=False, company="", source_url="",
+            note="This is a note to yourself, not a vacancy. Which company was it?",
+        )
+        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+
+        self.assertRedirects(response, reverse("inbox"))
+        self.assertFalse(Opportunity.objects.exists())
+        item.refresh_from_db()
+        self.assertEqual(item.status, InboxItem.Status.NEEDS_INPUT)
+        self.assertIn("Which company was it?", item.analysis_note)
+
+    @patch("tracker.views.analyze_inbox_item")
+    def test_analysis_links_a_role_you_already_saved(self, analyze):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Nihon Growth")
+        existing = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Marketing Intern",
+            source_url="https://nihongrowth.example/careers/marketing-intern",
+            canonical_url="https://nihongrowth.example/careers/marketing-intern",
+        )
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB,
+            source_url="https://nihongrowth.example/careers/marketing-intern",
+        )
+        analyze.return_value = _inbox_analysis()
+        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+
+        self.assertRedirects(response, f"{reverse('dashboard')}?selected={existing.id}")
+        self.assertEqual(Opportunity.objects.count(), 1)
+        item.refresh_from_db()
+        self.assertEqual(item.status, InboxItem.Status.PROCESSED)
+        self.assertEqual(item.opportunity, existing)
+
+    @patch("tracker.views.analyze_inbox_item")
+    def test_analysis_saves_a_fee_charging_program_as_unsuitable(self, analyze):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB,
+            source_url="https://placement.example/tokyo-program",
+        )
+        analyze.return_value = _inbox_analysis(
+            candidate_fee_required=True, candidate_fee="€2,400 program fee",
+        )
+        self.client.post(reverse("inbox-analyze", args=[item.id]))
+
+        opportunity = Opportunity.objects.get()
+        self.assertEqual(opportunity.verification_status, Opportunity.VerificationStatus.UNSUITABLE)
+        self.assertIsNotNone(opportunity.verified_at)
+
+    def test_analysis_needs_an_active_campaign(self):
+        SearchCampaign.objects.update(is_active=False)
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB, content="Something",
+        )
+        response = self.client.post(reverse("inbox-analyze", args=[item.id]))
+        self.assertRedirects(response, reverse("campaign-list"))
+        item.refresh_from_db()
+        self.assertEqual(item.status, InboxItem.Status.WAITING)
 
     def test_user_can_upload_opportunity_screenshot(self):
         with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):

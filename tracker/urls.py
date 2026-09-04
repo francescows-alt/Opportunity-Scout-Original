@@ -12,6 +12,7 @@ urlpatterns = [
     path("applications/search/<int:job_id>/status/", views.search_job_status, name="search-job-status"),
     path("applications/qualify/", views.qualify_discoveries, name="qualify-discoveries"),
     path("inbox/", views.inbox, name="inbox"),
+    path("inbox/<int:item_id>/analyze/", views.inbox_analyze, name="inbox-analyze"),
     path("applications/new/", views.opportunity_create, name="opportunity-create"),
     path("applications/<int:opportunity_id>/edit/", views.opportunity_edit, name="opportunity-edit"),
     path("applications/<int:opportunity_id>/favorite/", views.toggle_favorite, name="opportunity-favorite"),

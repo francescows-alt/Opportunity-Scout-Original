@@ -17,7 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, robert_reply, transcribe
+from .ai import AIUnavailable, analyze_inbox_item, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, robert_reply, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -952,6 +952,117 @@ def inbox(request):
         "items": InboxItem.objects.select_related("campaign", "opportunity").prefetch_related("attachments")[:50],
         "waiting_count": InboxItem.objects.filter(status=InboxItem.Status.WAITING).count(),
     })
+
+
+@require_POST
+def inbox_analyze(request, item_id):
+    """Turn one saved inbox capture into a real opportunity in the active campaign.
+
+    Deliberately shallow: this only establishes the employer, role and source URL.
+    The existing qualification pass then researches it like any other discovery,
+    so there is one research path in the app rather than two that can disagree.
+    """
+    item = get_object_or_404(InboxItem.objects.prefetch_related("attachments"), pk=item_id)
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    if not campaign:
+        messages.error(request, "Activate a search campaign before Robert analyses the inbox.")
+        return redirect("campaign-list")
+    profile = CandidateProfile.objects.filter(pk=1).first()
+    if not profile or not (profile.structured_profile or profile.profile_draft.strip()):
+        messages.error(request, "Finish a basic profile first so Robert can judge whether this fits you.")
+        return redirect("profile")
+
+    try:
+        analysis = analyze_inbox_item(campaign, profile, item)
+    except AIUnavailable as error:
+        messages.error(request, str(error))
+        return redirect("inbox")
+    except Exception:
+        logger.exception("Inbox analysis failed for item %s", item.id)
+        messages.error(request, "Robert could not read that one. Nothing was changed; please try again.")
+        return redirect("inbox")
+
+    note = analysis.note.strip()
+    source_url = analysis.source_url.strip()
+    parsed = urlparse(source_url)
+    usable_link = parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+    if not analysis.is_opportunity or analysis.needs_more_information or not usable_link or not analysis.company.strip():
+        InboxItem.objects.filter(pk=item.pk).update(
+            status=InboxItem.Status.NEEDS_INPUT,
+            analysis_note=note or "Robert could not establish the employer, the role or a real source link.",
+            analyzed_at=timezone.now(),
+        )
+        messages.info(request, note or "Robert needs more information before this can become an application.")
+        return redirect("inbox")
+
+    canonical_url = _canonicalize_url(source_url)
+    fingerprint = _opportunity_fingerprint(analysis.company, analysis.title, analysis.location)
+    existing = Opportunity.objects.filter(campaign=campaign).filter(
+        Q(canonical_url=canonical_url) | Q(fingerprint=fingerprint),
+    ).first()
+    if existing:
+        InboxItem.objects.filter(pk=item.pk).update(
+            status=InboxItem.Status.PROCESSED, opportunity=existing,
+            analysis_note=f"Already saved as “{existing.title}”. Linked to the application you already have.",
+            analyzed_at=timezone.now(),
+        )
+        messages.info(request, f"You already had this one: {existing.organization.name} — {existing.title}.")
+        return redirect(f"{reverse('dashboard')}?selected={existing.id}")
+
+    try:
+        with transaction.atomic():
+            organization = Organization.objects.filter(name__iexact=analysis.company.strip()).first()
+            if organization is None:
+                organization = Organization.objects.create(
+                    name=analysis.company.strip(), location=analysis.location.strip(),
+                )
+            missing = "\n".join(f"Unknown: {fact}" for fact in analysis.missing_information)
+            fit_summary = analysis.fit_summary.strip()
+            if missing:
+                fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
+            opportunity = Opportunity.objects.create(
+                campaign=campaign,
+                organization=organization,
+                title=analysis.title.strip(),
+                kind=analysis.kind,
+                location=analysis.location.strip(),
+                source_url=source_url,
+                canonical_url=canonical_url,
+                fingerprint=fingerprint,
+                job_description=analysis.description.strip(),
+                match_score=analysis.match_score,
+                fit_summary=fit_summary,
+                next_action=analysis.next_action.strip(),
+                candidate_fee_required=analysis.candidate_fee_required,
+                candidate_fee=analysis.candidate_fee.strip(),
+                compensation=analysis.compensation.strip(),
+                status=Opportunity.Status.DISCOVERED,
+                verification_status=(
+                    Opportunity.VerificationStatus.UNSUITABLE if analysis.candidate_fee_required
+                    else Opportunity.VerificationStatus.PENDING
+                ),
+                verified_at=timezone.now() if analysis.candidate_fee_required else None,
+            )
+            InboxItem.objects.filter(pk=item.pk).update(
+                status=InboxItem.Status.PROCESSED, opportunity=opportunity,
+                analysis_note=note, analyzed_at=timezone.now(),
+            )
+    except Exception:
+        logger.exception("Could not save the opportunity read from inbox item %s", item.id)
+        messages.error(request, "Robert read it but could not save it. Nothing was changed; please try again.")
+        return redirect("inbox")
+
+    if analysis.candidate_fee_required:
+        messages.warning(
+            request,
+            f"{organization.name} — {analysis.title} charges the candidate a fee, so it is saved as not suitable.",
+        )
+    else:
+        messages.success(
+            request,
+            f"Added {organization.name} — {analysis.title}. Run research to fill in the full report.",
+        )
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
 
 
 @require_POST

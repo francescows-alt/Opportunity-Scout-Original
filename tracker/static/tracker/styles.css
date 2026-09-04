@@ -334,6 +334,9 @@ dd { margin: 0; }
 .inbox-item-main small { color: var(--muted); }
 .type-pill { border-radius: 999px; background: var(--mint); padding: 0.2rem 0.55rem; color: var(--green); font-size: 0.7rem; font-weight: 750; }
 .inbox-files { display: flex; flex-direction: column; color: var(--muted); font-size: 0.75rem; }
+.inbox-item-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.6rem; }
+.inbox-item-actions form { margin: 0; }
+.inbox-note { grid-column: 1 / -1; margin: 0; border-left: 3px solid var(--line); padding-left: 0.7rem; color: var(--muted); font-size: 0.82rem; }
 .campaign-attachment { justify-self: start; }
 .profile-workspace { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr); align-items: start; gap: 1rem; }
 .chat-panel, .documents-wide { border: 1px solid var(--line); border-radius: 1.35rem; background: white; box-shadow: var(--shadow); }

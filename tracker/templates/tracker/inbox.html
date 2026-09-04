@@ -8,7 +8,7 @@
 </section>
 
 <section class="inbox-composer">
-    <div class="ai-state"><span>AI</span><div><strong>Analysis is not connected yet</strong><p>Your inputs will be saved safely for the next milestone. Nothing will be guessed or submitted.</p></div></div>
+    <div class="ai-state"><span>AI</span><div>{% if robert_is_configured %}<strong>Robert can read these for you</strong><p>Save anything here, then press Analyse on an item. Robert reads it, checks the source and adds it to your applications. Nothing is guessed or submitted.</p>{% else %}<strong>Analysis needs the OpenAI key</strong><p>Your inputs are saved safely. Add the key in <code>.env</code> and restart to let Robert read them.</p>{% endif %}</div></div>
     <form method="post" enctype="multipart/form-data" class="quick-form">
         {% csrf_token %}
         {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
@@ -42,7 +42,15 @@
         <div class="inbox-files">
             {% for attachment in item.attachments.all %}<span>▧ {{ attachment.file.name|cut:"job_inbox/"|truncatechars:30 }}</span>{% endfor %}
         </div>
-        <em class="status-pill">{{ item.get_status_display }}</em>
+        <div class="inbox-item-actions">
+            <em class="status-pill">{{ item.get_status_display }}</em>
+            {% if item.opportunity %}
+            <a class="button secondary" href="{% url 'dashboard' %}?selected={{ item.opportunity.id }}">Open application</a>
+            {% elif robert_is_configured %}
+            <form method="post" action="{% url 'inbox-analyze' item.id %}">{% csrf_token %}<button class="button primary" type="submit">{% if item.status == 'needs_input' %}Analyse again{% else %}Analyse{% endif %}</button></form>
+            {% endif %}
+        </div>
+        {% if item.analysis_note %}<p class="inbox-note">{{ item.analysis_note }}</p>{% endif %}
     </article>
     {% empty %}
     <div class="document-empty">Your inbox is empty. Paste a vacancy or upload a screenshot above.</div>
