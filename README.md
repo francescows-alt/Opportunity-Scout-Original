@@ -43,6 +43,8 @@ The application runs only while that terminal command is active. Press
 - Keep a record of what each search returned and what was filtered out, and mark
   any result good or bad. Every later search is told about those verdicts, so the
   searches get more tailored to you each time you use them
+- Open every saved application link in a real browser to check the vacancy is
+  actually there, and move invented ones to a Deleted folder you can undo
 - Research each internship in its own deep pass, five running at a time, so every
   company gets a full set of web searches instead of sharing one with seven others
 - Build campaigns conversationally with Robert, then edit every setting manually

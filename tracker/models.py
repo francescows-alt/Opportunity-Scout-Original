@@ -244,6 +244,16 @@ class Opportunity(models.Model):
         GOOD = "good", "Good result"
         BAD = "bad", "Bad result"
 
+    class DeletedBy(models.TextChoices):
+        YOU = "you", "You"
+        ROBERT = "robert", "Robert"
+
+    class LinkCheck(models.TextChoices):
+        CONFIRMED = "confirmed", "Vacancy found on the page"
+        NOT_FOUND = "not_found", "Vacancy not on the page"
+        LANDING_PAGE = "landing_page", "Careers page, not this vacancy"
+        UNCHECKED = "unchecked", "Could not check"
+
     campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="opportunities")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="opportunities")
     title = models.CharField(max_length=240)
@@ -278,6 +288,18 @@ class Opportunity(models.Model):
         blank=True,
         help_text="Why this result was good or bad, in your own words.",
     )
+    deleted_at = models.DateTimeField(
+        blank=True, null=True, db_index=True,
+        help_text="Set when this moves to the Deleted folder. The row is never removed from the database.",
+    )
+    deleted_reason = models.TextField(blank=True, help_text="Why it was deleted, in plain words.")
+    deleted_by = models.CharField(max_length=8, choices=DeletedBy.choices, blank=True)
+    link_check_status = models.CharField(
+        max_length=16, choices=LinkCheck.choices, blank=True, db_index=True,
+        help_text="What a real browser saw at the application link. Blank until checked.",
+    )
+    link_check_note = models.TextField(blank=True, help_text="What the page actually said, so you can judge it yourself.")
+    link_checked_at = models.DateTimeField(blank=True, null=True)
     canonical_url = models.URLField(max_length=500, blank=True, db_index=True)
     fingerprint = models.CharField(max_length=64, blank=True, db_index=True)
     deadline = models.DateField(blank=True, null=True)

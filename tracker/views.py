@@ -19,7 +19,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
-from .ai import AIUnavailable, RESEARCH_CONCURRENCY, RESEARCH_WEB_COST, analyze_inbox_item, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, research_one_opportunity, robert_reply, transcribe
+from .ai import AIUnavailable, RESEARCH_CONCURRENCY, RESEARCH_WEB_COST, analyze_inbox_item, analyze_profile_documents, campaign_reply, is_configured, profile_reply, qualify_opportunities, research_internships, research_one_opportunity, robert_reply, transcribe, verify_vacancy_exists
+from .linkcheck import check_links, record_result
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,36 @@ def _opportunity_fingerprint(company, title, location):
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
+# Words too common in job titles to tell two roles apart.
+_TITLE_NOISE = {"intern", "interns", "internship", "internships", "the", "and", "for", "of", "at", "in", "a", "an"}
+
+
+def _loose_role_key(company, title):
+    """A looser identity than the exact-title fingerprint: company plus the set of
+    meaningful title words."""
+    words = {word for word in _normalized_words(title).split() if word not in _TITLE_NOISE}
+    return _normalized_words(company), frozenset(words)
+
+
+def _is_near_duplicate(key, known_keys):
+    """True when this role is the same job as one already saved, told slightly
+    differently.
+
+    Tencent "Marketing Intern" and "Marketing Intern, Global Game Brand Marketing"
+    hashed differently and were both saved, from Workday requisition ids one digit
+    apart. One title's words being contained in the other's is the giveaway.
+    """
+    company, words = key
+    if not words:
+        return False
+    for known_company, known_words in known_keys:
+        if known_company != company or not known_words:
+            continue
+        if words <= known_words or known_words <= words:
+            return True
+    return False
+
+
 def _score_tone(score):
     if score is None:
         return "unknown"
@@ -158,14 +189,20 @@ def _incomplete_research_filter():
 def dashboard(request):
     # Each campaign is a separate job-hunt sheet: only the selected one is shown.
     active_campaign = SearchCampaign.objects.filter(is_active=True).first()
-    campaign_opportunities = (
+    all_rows = (
         Opportunity.objects.filter(campaign=active_campaign)
         if active_campaign else Opportunity.objects.none()
     )
-    opportunities = campaign_opportunities.select_related("campaign", "organization")
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip()
     review = request.GET.get("review", "").strip()
+    # Deleted rows stay in the database forever, but they leave every list and
+    # every count until you open the Deleted folder itself.
+    campaign_opportunities = (
+        all_rows.exclude(deleted_at__isnull=True) if review == "deleted"
+        else all_rows.filter(deleted_at__isnull=True)
+    )
+    opportunities = campaign_opportunities.select_related("campaign", "organization")
     if query:
         opportunities = opportunities.filter(
             Q(organization__name__icontains=query)
@@ -188,6 +225,11 @@ def dashboard(request):
             Opportunity.VerificationStatus.UNSUITABLE,
             Opportunity.VerificationStatus.EXPIRED,
             Opportunity.VerificationStatus.UNVERIFIED,
+        ])
+    elif review == "check":
+        opportunities = opportunities.filter(link_check_status__in=[
+            Opportunity.LinkCheck.NOT_FOUND,
+            Opportunity.LinkCheck.LANDING_PAGE,
         ])
 
     paginator = Paginator(opportunities, 25)
@@ -233,6 +275,10 @@ def dashboard(request):
             verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
         "favorites_count": all_opportunities.filter(is_favorite=True).count(),
+        "needs_check_count": all_opportunities.filter(link_check_status__in=[
+            Opportunity.LinkCheck.NOT_FOUND, Opportunity.LinkCheck.LANDING_PAGE,
+        ]).count(),
+        "deleted_count": all_rows.exclude(deleted_at__isnull=True).count(),
         "selected_alert": _selected_alert(selected) if selected else None,
         "active_search_job": SearchJob.objects.filter(
             status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING],
@@ -247,6 +293,97 @@ def toggle_favorite(request, opportunity_id):
     opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
     opportunity.is_favorite = not opportunity.is_favorite
     opportunity.save(update_fields=["is_favorite", "updated_at"])
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
+@require_POST
+def check_link(request, opportunity_id):
+    """Render the saved application link in a real browser. Free, no AI."""
+    opportunity = get_object_or_404(Opportunity.objects.select_related("organization"), pk=opportunity_id)
+    for checked, status, note in check_links([opportunity]):
+        record_result(checked, status, note)
+        messages.success(request, f"{checked.get_link_check_status_display()} — {note}")
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
+@require_POST
+def verify_vacancy(request, opportunity_id):
+    """Ask Robert to try to disprove one vacancy. Costs money, so it is one click
+    on one row and is never triggered in bulk."""
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    if not campaign:
+        messages.error(request, "Activate a search campaign first.")
+        return redirect("campaign-list")
+    opportunity = get_object_or_404(Opportunity.objects.select_related("organization"), pk=opportunity_id)
+    try:
+        finding = verify_vacancy_exists(campaign, opportunity, opportunity.link_check_note)
+    except AIUnavailable as error:
+        messages.error(request, str(error))
+        return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+    except Exception:
+        logger.exception("Vacancy verification failed for opportunity %s", opportunity_id)
+        messages.error(request, "That check was interrupted. Nothing was changed.")
+        return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+    if finding.verdict == "does_not_exist":
+        _soft_delete(
+            opportunity,
+            f"Robert could not find this vacancy anywhere. {finding.evidence}",
+            Opportunity.DeletedBy.ROBERT,
+        )
+        messages.success(
+            request,
+            "Robert could not find this vacancy. It is in the Deleted folder — open it to read why, or put it back.",
+        )
+        return redirect(f"{reverse('dashboard')}?review=deleted")
+
+    # Anything short of proof leaves the row exactly where it is.
+    opportunity.link_check_status = (
+        Opportunity.LinkCheck.CONFIRMED if finding.verdict == "exists"
+        else Opportunity.LinkCheck.UNCHECKED
+    )
+    opportunity.link_check_note = (
+        f"Robert: {finding.evidence}"
+        + (f" Confirmed title: {finding.confirmed_title}" if finding.confirmed_title.strip() else "")
+    )[:2000]
+    opportunity.link_checked_at = timezone.now()
+    opportunity.save(update_fields=["link_check_status", "link_check_note", "link_checked_at", "updated_at"])
+    if finding.verdict == "exists":
+        messages.success(request, f"Robert confirmed this vacancy: {finding.confirmed_title or opportunity.title}")
+    else:
+        messages.info(request, "Robert could not tell either way, so nothing was deleted. Judge this one yourself.")
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
+def _soft_delete(opportunity, reason, by):
+    """Move a row to the Deleted folder. The database row is never removed, so
+    every delete can be undone and a deleted fake still blocks rediscovery."""
+    opportunity.deleted_at = timezone.now()
+    opportunity.deleted_reason = reason[:2000]
+    opportunity.deleted_by = by
+    opportunity.save(update_fields=["deleted_at", "deleted_reason", "deleted_by", "updated_at"])
+
+
+@require_POST
+def delete_opportunity(request, opportunity_id):
+    opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    _soft_delete(
+        opportunity,
+        request.POST.get("reason", "").strip() or "Moved to Deleted by you.",
+        Opportunity.DeletedBy.YOU,
+    )
+    messages.success(request, f"Moved to Deleted. Nothing is lost — open the Deleted folder to put it back.")
+    return redirect(f"{reverse('dashboard')}?review=deleted")
+
+
+@require_POST
+def restore_opportunity(request, opportunity_id):
+    opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    opportunity.deleted_at = None
+    opportunity.deleted_reason = ""
+    opportunity.deleted_by = ""
+    opportunity.save(update_fields=["deleted_at", "deleted_reason", "deleted_by", "updated_at"])
+    messages.success(request, "Restored to your applications.")
     return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
 
 
@@ -489,6 +626,64 @@ def _run_research_only(job_id):
         close_old_connections()
 
 
+def _run_link_check_all(job_id):
+    """Render every saved application link for this campaign. Free: no AI, no spend."""
+    close_old_connections()
+    try:
+        job = SearchJob.objects.select_related("campaign").get(pk=job_id)
+        rows = list(
+            Opportunity.objects.select_related("organization")
+            .filter(campaign=job.campaign, deleted_at__isnull=True)
+            .exclude(source_url="")
+            .order_by("id")
+        )
+        total = len(rows)
+        _update_search_job(
+            job_id, status=SearchJob.Status.RUNNING, stage="checking", progress=5,
+            message=f"Opening {total} application link{'s' if total != 1 else ''}…",
+            found_count=total, opportunity_ids=[row.id for row in rows],
+        )
+
+        done = 0
+        flagged = 0
+        for opportunity, status, note in check_links(rows):
+            record_result(opportunity, status, note)
+            done += 1
+            if status in {Opportunity.LinkCheck.NOT_FOUND, Opportunity.LinkCheck.LANDING_PAGE}:
+                flagged += 1
+            _update_search_job(
+                job_id, stage="checking",
+                progress=5 + round(90 * done / max(total, 1)),
+                message=f"Checked {done} of {total}: {opportunity.organization.name}"[:300],
+                researched_count=done, duplicate_count=flagged,
+            )
+
+        _update_search_job(
+            job_id, status=SearchJob.Status.COMPLETE, stage="complete", progress=100,
+            message=(
+                f"Checked {total} links. {flagged} need{'s' if flagged == 1 else ''} your attention."
+                if flagged else f"Checked {total} links. Every one showed its vacancy."
+            ),
+        )
+    except Exception as error:
+        _update_search_job(
+            job_id, status=SearchJob.Status.FAILED, stage="failed", progress=100,
+            message="The link check stopped safely. Nothing was changed.", error=str(error)[:1000],
+        )
+    finally:
+        close_old_connections()
+
+
+@require_POST
+def start_link_check(request):
+    """Free, so it needs no spending approval — but it still runs in the
+    background because rendering 44 pages takes a couple of minutes."""
+    campaign = SearchCampaign.objects.filter(is_active=True).first()
+    if not campaign:
+        return JsonResponse({"error": "Create and activate a search campaign first."}, status=400)
+    return _launch_background_job(campaign, _run_link_check_all)
+
+
 @require_POST
 def start_research_only(request):
     campaign, profile, error = _require_campaign_and_profile()
@@ -547,11 +742,16 @@ def discover_internships(request):
             for opportunity in Opportunity.objects.filter(campaign=campaign)
             if opportunity.source_url
         }
+        existing = list(Opportunity.objects.filter(campaign=campaign).select_related("organization"))
         known_fingerprints = {
             opportunity.fingerprint or _opportunity_fingerprint(
                 opportunity.organization.name, opportunity.title, opportunity.location,
             )
-            for opportunity in Opportunity.objects.filter(campaign=campaign).select_related("organization")
+            for opportunity in existing
+        }
+        known_role_keys = {
+            _loose_role_key(opportunity.organization.name, opportunity.title)
+            for opportunity in existing
         }
         for item in batch.opportunities:
             source_url = item.source_url.strip()
@@ -561,9 +761,16 @@ def discover_internships(request):
                 continue
             canonical_url = _canonicalize_url(source_url)
             fingerprint = _opportunity_fingerprint(item.company, item.title, item.location)
+            role_key = _loose_role_key(item.company, item.title)
             if canonical_url in known_urls or fingerprint in known_fingerprints:
                 duplicates += 1
                 _reject(item, "duplicate")
+                continue
+            if _is_near_duplicate(role_key, known_role_keys):
+                # Same company, near-identical role, different URL. This is how the
+                # two fabricated Tencent "Marketing Intern" rows both got saved.
+                duplicates += 1
+                _reject(item, "near_duplicate")
                 continue
             try:
                 with transaction.atomic():
@@ -611,6 +818,7 @@ def discover_internships(request):
                 continue
             known_urls.add(canonical_url)
             known_fingerprints.add(fingerprint)
+            known_role_keys.add(role_key)
             created_ids.append(opportunity.pk)
             if item.candidate_fee_required:
                 fee_blocked += 1

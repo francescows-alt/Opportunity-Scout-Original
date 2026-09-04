@@ -96,6 +96,9 @@ when it is fixed, add one when Francesco reports something that is not fixed tod
 - **Research cost is estimated, not measured.** `RESEARCH_WEB_COST` in `ai.py` is
   a guess of $0.04 per internship. Replace it with a real figure once a deep run
   has happened, and tell him what it actually cost.
+- **9 Indeed links can never be auto-checked.** Indeed serves HTTP 401 to any
+  automated browser, so those rows sit at `unchecked` forever. That is honest, not
+  a bug — never let `unchecked` count as evidence against a vacancy.
 - **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
   reverted in `d327198` / `6859116` after it crashed the running server. Redo it
   carefully, and tell Francesco to restart the server before he looks.

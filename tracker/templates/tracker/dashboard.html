@@ -13,6 +13,7 @@
     {% if active_campaign %}
     <div class="discovery-actions">
         <form method="post" action="{% url 'search-start' %}" data-background-job-form data-active-status-url="{% if active_search_job %}{% url 'search-job-status' active_search_job.id %}{% endif %}">{% csrf_token %}<button class="button primary" type="submit" {% if not ai_configured %}disabled{% endif %}>Find &amp; research internships</button></form>
+        <form method="post" action="{% url 'link-check-start' %}" data-background-job-form data-working-label="Opening every link…">{% csrf_token %}<button class="recovery-link" type="submit">Check all links (free)</button></form>
         {% if research_needed_count %}<form method="post" action="{% url 'research-start' %}" data-background-job-form data-working-label="Finishing research…">{% csrf_token %}<button class="recovery-link" type="submit" {% if not ai_configured %}disabled{% endif %}>Retry {{ research_needed_count }} incomplete</button></form>{% endif %}
     </div>
     {% else %}<a class="button primary" href="{% url 'campaign-create' %}">Create search first</a>{% endif %}
@@ -35,7 +36,7 @@
 </section>
 
 <nav class="review-tabs" aria-label="Opportunity review groups">
-    <a class="{% if not current_review %}current{% endif %}" href="{% url 'dashboard' %}">All <span>{{ tracked_count }}</span></a><a class="{% if current_review == 'serious' %}current{% endif %}" href="?review=serious">Serious list <span>{{ serious_count }}</span></a><a class="{% if current_review == 'clarify' %}current{% endif %}" href="?review=clarify">Needs clarification <span>{{ clarify_count }}</span></a><a class="{% if current_review == 'research' %}current{% endif %}" href="?review=research">Research needed <span>{{ research_needed_count }}</span></a><a class="{% if current_review == 'favorites' %}current{% endif %}" href="?review=favorites">★ Favorites <span>{{ favorites_count }}</span></a><a class="{% if current_review == 'not_suitable' %}current{% endif %}" href="?review=not_suitable">Not suitable</a>
+    <a class="{% if not current_review %}current{% endif %}" href="{% url 'dashboard' %}">All <span>{{ tracked_count }}</span></a><a class="{% if current_review == 'serious' %}current{% endif %}" href="?review=serious">Serious list <span>{{ serious_count }}</span></a><a class="{% if current_review == 'clarify' %}current{% endif %}" href="?review=clarify">Needs clarification <span>{{ clarify_count }}</span></a><a class="{% if current_review == 'research' %}current{% endif %}" href="?review=research">Research needed <span>{{ research_needed_count }}</span></a><a class="{% if current_review == 'favorites' %}current{% endif %}" href="?review=favorites">★ Favorites <span>{{ favorites_count }}</span></a><a class="{% if current_review == 'not_suitable' %}current{% endif %}" href="?review=not_suitable">Not suitable</a><a class="{% if current_review == 'check' %}current{% endif %}" href="?review=check">Needs checking <span>{{ needs_check_count }}</span></a><a class="{% if current_review == 'deleted' %}current{% endif %}" href="?review=deleted">Deleted <span>{{ deleted_count }}</span></a>
 </nav>
 {% endif %}
 
@@ -56,6 +57,36 @@
             <button class="quality-button bad" type="submit" name="flag" value="bad">✗ Bad</button>
         {% endif %}
     </form>
+
+    <div class="verify-strip{% if selected.link_check_status == 'not_found' %} bad{% elif selected.link_check_status == 'landing_page' %} warn{% elif selected.link_check_status == 'confirmed' %} good{% endif %}">
+        <div class="verify-text">
+            {% if selected.link_check_status %}
+                <strong>{{ selected.get_link_check_status_display }}</strong>
+                <small>{{ selected.link_check_note }}</small>
+            {% else %}
+                <strong>This link has not been checked</strong>
+                <small>Opening it in a real browser is free and takes a few seconds.</small>
+            {% endif %}
+        </div>
+        <div class="verify-actions">
+            <form method="post" action="{% url 'opportunity-check-link' selected.id %}">{% csrf_token %}<button class="quality-button" type="submit">Check link (free)</button></form>
+            {% if selected.link_check_status and selected.link_check_status != 'confirmed' %}
+            <form method="post" action="{% url 'opportunity-verify' selected.id %}">{% csrf_token %}<button class="quality-button bad" type="submit" {% if not ai_configured %}disabled{% endif %}>Ask Robert to verify</button></form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if selected.deleted_at %}
+    <div class="verify-strip bad">
+        <div class="verify-text"><strong>In the Deleted folder{% if selected.deleted_by %} — {{ selected.get_deleted_by_display }} removed it{% endif %}</strong><small>{{ selected.deleted_reason }}</small></div>
+        <div class="verify-actions"><form method="post" action="{% url 'opportunity-restore' selected.id %}">{% csrf_token %}<button class="quality-button good" type="submit">Put it back</button></form></div>
+    </div>
+    {% else %}
+    <form class="verify-strip" method="post" action="{% url 'opportunity-delete' selected.id %}">{% csrf_token %}
+        <div class="verify-text"><strong>Not a real opportunity?</strong><small>It moves to the Deleted folder. Nothing is lost and you can put it back.</small></div>
+        <div class="verify-actions"><input name="reason" type="text" maxlength="2000" placeholder="Optional: why?" autocomplete="off"><button class="quality-button bad" type="submit">Move to Deleted</button></div>
+    </form>
+    {% endif %}
 
     <div class="company-strip"><span><b>◉</b><small>Company size</small><strong>{{ selected.company_size|default:"Research needed" }}</strong></span><span><b>⌖</b><small>Headquarters</small><strong>{{ selected.company_country|default:"Research needed" }}</strong></span><span><b>◇</b><small>Industry</small><strong>{{ selected.company_industry|default:"Research needed" }}</strong></span></div>
 

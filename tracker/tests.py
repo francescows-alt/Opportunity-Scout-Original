@@ -273,6 +273,110 @@ class DashboardTests(TestCase):
         self.assertEqual(bad["why"], "Already expired.")
         self.assertEqual(bad["company"], "Wrong Company")
 
+    def test_link_check_judges_real_pages_correctly(self):
+        from .linkcheck import judge_page
+
+        workday = "https://tencent.wd1.myworkdayjobs.com/en-US/Tencent_Careers/job/Marketing-Intern_R107154"
+        # A specific posting URL that renders the site's generic title is how a
+        # fabricated requisition id looks. Both Tencent rows behaved this way.
+        status, _ = judge_page("Marketing Intern", "Careers", "cookie banner", workday)
+        self.assertEqual(status, Opportunity.LinkCheck.NOT_FOUND)
+        # A real vacancy names itself in the document title.
+        status, _ = judge_page(
+            "Business Development Intern, WeChat Pay Japan",
+            "Business Development Intern (Open)", "", workday,
+        )
+        self.assertEqual(status, Opportunity.LinkCheck.CONFIRMED)
+        # A company careers index is the wrong link, not an invented job.
+        status, _ = judge_page(
+            "Consulting and Advisory Intern", "Career – J-Global Group", "",
+            "https://www.j-global.com/en/career/",
+        )
+        self.assertEqual(status, Opportunity.LinkCheck.LANDING_PAGE)
+        # "Intern" alone must never count as a match, or every page confirms.
+        status, _ = judge_page("Marketing Intern", "Internship | Some Other Co", "", "https://x.example/internship/")
+        self.assertEqual(status, Opportunity.LinkCheck.LANDING_PAGE)
+
+    @patch("tracker.views.verify_vacancy_exists")
+    def test_robert_deletes_only_when_he_is_sure(self, verify):
+        from .ai import VacancyExistence
+
+        SearchCampaign.objects.filter(pk=self.campaign.pk).update(is_active=True)
+        organization = Organization.objects.create(name="Tencent")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Marketing Intern",
+            source_url="https://tencent.wd1.myworkdayjobs.com/en-US/x/job/Marketing-Intern_R107154",
+            link_check_status=Opportunity.LinkCheck.NOT_FOUND,
+        )
+
+        # Unsure must never destroy a row.
+        verify.return_value = VacancyExistence(
+            verdict="cannot_tell", confirmed_title="", evidence="The careers site could not be read.", sources=[],
+        )
+        self.client.post(reverse("opportunity-verify", args=[opportunity.id]))
+        opportunity.refresh_from_db()
+        self.assertIsNone(opportunity.deleted_at)
+
+        # Only a definite finding deletes, and even then only into the folder.
+        verify.return_value = VacancyExistence(
+            verdict="does_not_exist", confirmed_title="",
+            evidence="Tencent's careers listing has no such role.", sources=[],
+        )
+        self.client.post(reverse("opportunity-verify", args=[opportunity.id]))
+        opportunity.refresh_from_db()
+        self.assertIsNotNone(opportunity.deleted_at)
+        self.assertEqual(opportunity.deleted_by, Opportunity.DeletedBy.ROBERT)
+        self.assertIn("no such role", opportunity.deleted_reason)
+        # Deleted means hidden, never gone.
+        self.assertTrue(Opportunity.objects.filter(pk=opportunity.pk).exists())
+
+    def test_deleted_rows_leave_the_list_but_can_come_back(self):
+        SearchCampaign.objects.filter(pk=self.campaign.pk).update(is_active=True)
+        organization = Organization.objects.create(name="Ghost Company")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Invented Intern",
+        )
+        self.client.post(reverse("opportunity-delete", args=[opportunity.id]), {"reason": "Does not exist."})
+
+        listing = self.client.get(reverse("dashboard"))
+        self.assertNotContains(listing, "Ghost Company")
+        self.assertEqual(listing.context["tracked_count"], 0)
+        self.assertEqual(listing.context["deleted_count"], 1)
+
+        folder = self.client.get(reverse("dashboard"), {"review": "deleted"})
+        self.assertContains(folder, "Ghost Company")
+
+        self.client.post(reverse("opportunity-restore", args=[opportunity.id]))
+        self.assertContains(self.client.get(reverse("dashboard")), "Ghost Company")
+
+    @patch("tracker.views.research_internships")
+    def test_near_duplicate_roles_are_blocked(self, research):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Tencent")
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization,
+            title="Marketing Intern, Global Game Brand Marketing",
+            source_url="https://tencent.wd1.myworkdayjobs.com/en-US/x/job/Marketing-Intern_R107144",
+            canonical_url="https://tencent.wd1.myworkdayjobs.com/en-US/x/job/Marketing-Intern_R107144",
+        )
+        research.return_value = InternshipDiscoveryBatch(
+            summary="One result.", search_strategy="ATS", queries_used=["x"], sources_searched=["y"],
+            opportunities=[{
+                # Same company, near-identical role, requisition id one digit apart.
+                "company": "Tencent", "title": "Marketing Intern", "kind": "advertised",
+                "location": "Tokyo, Japan",
+                "source_url": "https://tencent.wd1.myworkdayjobs.com/en-US/x/job/Marketing-Intern_R107154",
+                "description": "A near-duplicate.", "match_score": 60, "fit_summary": "x",
+                "missing_information": [], "candidate_fee_required": False,
+                "candidate_fee": "None", "compensation": "Not stated", "next_action": "None",
+            }],
+        )
+        self.client.post(reverse("discover-internships"))
+
+        self.assertEqual(Opportunity.objects.count(), 1)
+        cycle = SearchCycle.objects.get()
+        self.assertEqual([entry["reason"] for entry in cycle.rejections], ["near_duplicate"])
+
     def test_user_can_favorite_an_opportunity(self):
         organization = Organization.objects.create(name="Favorite Company")
         opportunity = Opportunity.objects.create(

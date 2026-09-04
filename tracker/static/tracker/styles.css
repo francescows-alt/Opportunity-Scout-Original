@@ -225,6 +225,15 @@ dd { margin: 0; }
 .quality-button { border: 1px solid #d5d9e4; border-radius: 999px; background: white; padding: 0.3rem 0.7rem; color: #59647b; font: inherit; font-size: 0.7rem; font-weight: 800; cursor: pointer; }
 .quality-button.good:hover { border-color: #9edac5; background: #e7f8f1; color: #0b6e5a; }
 .quality-button.bad:hover { border-color: #e8adad; background: #fde9e9; color: #962d2d; }
+.verify-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.55rem; border: 1px solid var(--line); border-radius: 0.8rem; background: #f8fafc; padding: 0.6rem 0.75rem; }
+.verify-strip.good { border-color: #9edac5; background: #f7fffb; }
+.verify-strip.warn { border-color: #e9ca7b; background: #fffaf0; }
+.verify-strip.bad { border-color: #e8adad; background: #fff8f8; }
+.verify-text { flex: 1 1 15rem; min-width: 0; }
+.verify-text strong { display: block; font-size: 0.74rem; }
+.verify-text small { display: block; margin-top: 0.12rem; color: var(--muted); font-size: 0.68rem; line-height: 1.35; }
+.verify-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; }
+.verify-actions input { flex: 1 1 9rem; min-width: 0; border: 1px solid #d5d9e4; border-radius: 999px; padding: 0.34rem 0.7rem; font: inherit; font-size: 0.7rem; }
 .company-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; border-bottom: 1px solid var(--line); padding: 0.85rem 0; }
 .company-strip span { display: grid; grid-template-columns: auto 1fr; column-gap: 0.55rem; border: 1px solid var(--line); border-radius: 0.8rem; background: #f8fafc; padding: 0.7rem 0.8rem; }
 .company-strip b { display: grid; grid-row: 1 / 3; width: 1.7rem; height: 1.7rem; place-items: center; border-radius: 50%; background: var(--mint); color: var(--green); }

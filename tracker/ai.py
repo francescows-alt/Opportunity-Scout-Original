@@ -208,6 +208,8 @@ class OpportunityResearchBatch(BaseModel):
 # report. Replace with a measured figure once real runs have been recorded.
 RESEARCH_WEB_COST = Decimal("0.040000")
 RESEARCH_CONCURRENCY = 5
+# A shorter, targeted "does this vacancy exist" call.
+VACANCY_CHECK_COST = Decimal("0.020000")
 
 
 def is_configured():
@@ -536,6 +538,57 @@ def qualify_opportunities(campaign, profile, opportunities):
         summary=f"Researched {len(reports)} opportunit{'y' if len(reports) == 1 else 'ies'} individually.",
         reports=reports,
     )
+
+
+class VacancyExistence(BaseModel):
+    verdict: str = Field(pattern="^(exists|does_not_exist|cannot_tell)$")
+    confirmed_title: str = Field(max_length=240)
+    evidence: str = Field(max_length=1200)
+    sources: list[ResearchSource] = Field(max_length=6)
+
+
+def verify_vacancy_exists(campaign, opportunity, browser_finding=""):
+    """Try to DISPROVE one saved vacancy.
+
+    The same model that invented a vacancy will happily confirm it if asked
+    politely, so this prompt is adversarial: it starts from the assumption that
+    the row may be fabricated, and it has to quote a title it actually read.
+    """
+    response = _client().responses.parse(
+        model=settings.OPENAI_CHAT_MODEL,
+        tools=[{"type": "web_search"}],
+        max_tool_calls=8,
+        instructions=ROBERT_RULES + """
+Your job is to DISPROVE a saved vacancy, not to defend it. Assume it may be wrong.
+This record may have been produced by an earlier AI run that invented a plausible-looking job posting and a plausible-looking URL. Applicant-tracking systems return a normal page for invented job ids, so the link opening is not evidence of anything.
+Search the employer's own careers site and reputable job boards for this exact role. Do not accept a company careers index as proof of a specific vacancy.
+Return verdict "exists" ONLY when you found this specific vacancy and can quote its title as printed on a page you actually opened. Put that exact wording in confirmed_title.
+Return "does_not_exist" when the employer's own careers listings can be read and this role is genuinely absent from them, or the posting is clearly withdrawn.
+Return "cannot_tell" whenever you are unsure, blocked, or the careers site could not be read. Choosing "cannot_tell" is correct and expected; it is never a failure.
+A wrong "does_not_exist" destroys a real opportunity and a wrong "exists" keeps a fabricated one. When the evidence is thin, say cannot_tell.
+In evidence, state plainly what you searched and what you found or failed to find. Never invent a URL. Never claim to have opened a page you did not open.
+""",
+        input=(
+            f"Today is {timezone.localdate().isoformat()}.\n"
+            "SAVED RECORD TO CHALLENGE:\n" + json.dumps({
+                "company": opportunity.organization.name,
+                "title": opportunity.title,
+                "location": opportunity.location,
+                "claimed_url": opportunity.source_url,
+                "company_website": opportunity.organization.website,
+            }, ensure_ascii=False)
+            + "\n\nWHAT A REAL BROWSER SAW AT THAT URL:\n" + (browser_finding or "Not checked.")
+            + "\n\nCAMPAIGN CONTEXT:\n" + json.dumps({
+                "goal": campaign.goal, "locations": campaign.locations,
+            }, ensure_ascii=False)
+        ),
+        text_format=VacancyExistence,
+        max_output_tokens=2000,
+        store=False,
+    )
+    _record_text_usage(response, "vacancy_check")
+    AIUsage.objects.create(purpose="vacancy_check_web", estimated_cost_usd=VACANCY_CHECK_COST)
+    return response.output_parsed
 
 
 def transcribe(uploaded_file, duration_seconds=0):
