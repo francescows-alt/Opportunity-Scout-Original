@@ -1,7 +1,11 @@
 # Claude project handoff
 
-This is Francesco's private local internship-search application. Read `README.md`
-and the latest Git history before changing anything.
+This is Francesco's private local internship-search application. Read `README.md`,
+`LESSONS.md` and the latest Git history before changing anything.
+
+`LESSONS.md` is the mistake log for both Claude and Codex. Every rule below came
+from a real failure recorded there. When Francesco corrects you, add the entry
+yourself, the same day, without being asked.
 
 ## Product rules
 
@@ -29,12 +33,22 @@ and the latest Git history before changing anything.
 
 ## Verification
 
-- If you cannot verify it, do not ship it. Claude has no browser here: it can
-  run tests and read raw HTML, but cannot see the rendered page.
-- Never commit CSS, template or layout changes until Francesco has confirmed
-  they look right in the browser.
+- If you cannot verify it, do not ship it.
+- **Look at the page yourself.** Run
+  `.venv/bin/python tools/screenshot.py /inbox/` and open the PNG it writes to
+  `.screenshots/`. It starts its own throwaway server on a free port, so
+  Francesco's `runserver` can keep running. Useful flags: `--width 480` for
+  mobile, `--viewport-only`, `--wait-ms`. The script reports the HTTP status and
+  any JavaScript errors.
+- Screenshot every template, CSS or layout change **before** committing it, and
+  before asking Francesco to look. Asking him to be your eyes is a last resort,
+  not the process.
+- Tests and `curl` run in a fresh process; his browser does not. Neither proves
+  the page renders for him.
 - After adding any new Python file, tell Francesco to restart the server.
   Django does not always pick up new files while running.
+- If a limitation is blocking verification, fix the limitation. Do not build a
+  workflow around it and hand him the manual work. See `LESSONS.md`.
 
 ## Development workflow
 

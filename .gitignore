@@ -11,6 +11,9 @@ __pycache__/
 .env
 media/
 
+# Assistant screenshots of the local app
+.screenshots/
+
 # macOS and editor files
 .DS_Store
 .vscode/

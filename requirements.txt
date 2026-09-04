@@ -1,3 +1,8 @@
 Django==6.0.8
 openai==3.7.0
 python-dotenv==1.2.3
+
+# Development only: lets an assistant screenshot the local app and check its own
+# work. Not used by the application at runtime. After installing, run once:
+#   .venv/bin/playwright install chromium
+playwright==1.62.0
