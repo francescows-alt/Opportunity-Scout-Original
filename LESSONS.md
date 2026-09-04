@@ -160,3 +160,22 @@ the page against the real database before shipping.
 **Rule now.** Tests use clean fixtures; his data has history. Before shipping
 anything that reads existing rows, render it against the real database and look
 at the actual output.
+
+---
+
+## 2026-09-04 — Long answers to short questions
+
+**What happened.** Asked why Claude Code prompts for bash commands, I wrote four
+sections, a bullet list, a caveat and a judgement call. *"why your explanations
+are so long and shit? what do i need to do in simple words?"* The whole answer he
+needed was two words: restart it.
+
+**Why it mattered.** The rule was already in `CLAUDE.md` and already in this file
+from earlier the same day. I kept writing to be thorough, which is writing for me,
+not for him. Length buries the one line that changes what he does next.
+
+**Rule now.** Answer the question, then stop. When he asks what to do, give the
+action first in one line, and nothing else unless he asks. No "worth flagging",
+no "one judgement call", no offering alternatives he did not ask for. If an
+explanation is genuinely needed, it comes after the action and stays under three
+lines.
