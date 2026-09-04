@@ -1,6 +1,7 @@
 from datetime import timedelta
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+import json
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -8,7 +9,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch
+from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch, _known_role_labels
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
@@ -174,6 +175,83 @@ class DashboardTests(TestCase):
         self.assertIn("Unknown: Visa support", opportunity.fit_summary)
         self.assertEqual(opportunity.status, Opportunity.Status.DISCOVERED)
         self.assertEqual(SearchCycle.objects.get().added_count, 1)
+
+    @patch("tracker.views.research_internships")
+    def test_discovery_keeps_the_evidence_needed_to_judge_search_quality(self, research):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Already Saved")
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Known Intern",
+            source_url="https://known.example.com/jobs/1",
+            canonical_url="https://known.example.com/jobs/1",
+        )
+        research.return_value = InternshipDiscoveryBatch(
+            summary="Two results.", search_strategy="Direct employer pages",
+            queries_used=["Tokyo growth internship 2027"], sources_searched=["Employer careers"],
+            opportunities=[
+                {
+                    "company": "Example Japan", "title": "Growth Intern", "kind": "advertised",
+                    "location": "Tokyo, Japan", "source_url": "https://example.com/jobs/growth-intern",
+                    "description": "A real example vacancy.", "match_score": 82,
+                    "fit_summary": "Relevant.", "missing_information": [],
+                    "candidate_fee_required": False, "candidate_fee": "None found",
+                    "compensation": "Not stated", "next_action": "Verify dates.",
+                },
+                {
+                    "company": "Already Saved", "title": "Known Intern", "kind": "advertised",
+                    "location": "Tokyo, Japan", "source_url": "https://known.example.com/jobs/1",
+                    "description": "The same role again.", "match_score": 70,
+                    "fit_summary": "Duplicate.", "missing_information": [],
+                    "candidate_fee_required": False, "candidate_fee": "None found",
+                    "compensation": "Not stated", "next_action": "None.",
+                },
+            ],
+        )
+        self.client.post(reverse("discover-internships"))
+        cycle = SearchCycle.objects.get()
+        # Everything the search returned survives, including what the app filtered out.
+        self.assertEqual(len(cycle.raw_results), 2)
+        self.assertEqual([entry["reason"] for entry in cycle.rejections], ["duplicate"])
+        self.assertEqual(cycle.rejections[0]["company"], "Already Saved")
+        added = Opportunity.objects.get(title="Growth Intern")
+        self.assertEqual(added.search_cycle, cycle)
+
+    def test_francesco_can_flag_a_bad_search_result(self):
+        organization = Organization.objects.create(name="Wrong Company")
+        opportunity = Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Reception Intern",
+        )
+        response = self.client.post(
+            reverse("opportunity-quality", args=[opportunity.id]),
+            {"flag": "bad", "note": "Admin work, no research value."},
+        )
+        self.assertRedirects(response, f"{reverse('dashboard')}?selected={opportunity.id}")
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.quality_flag, Opportunity.QualityFlag.BAD)
+        self.assertEqual(opportunity.quality_note, "Admin work, no research value.")
+        # Flagging labels only: the result stays exactly where it was.
+        self.assertEqual(Opportunity.objects.count(), 1)
+        self.assertEqual(opportunity.status, Opportunity.Status.DISCOVERED)
+
+        self.client.post(reverse("opportunity-quality", args=[opportunity.id]), {"flag": ""})
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.quality_flag, "")
+        self.assertEqual(opportunity.quality_note, "")
+
+    def test_known_roles_list_is_trimmed_at_whole_entries(self):
+        organization = Organization.objects.create(name="Bulk Company")
+        Opportunity.objects.bulk_create([
+            Opportunity(
+                campaign=self.campaign, organization=organization,
+                title=f"Marketing and Growth Internship number {index}",
+            )
+            for index in range(400)
+        ])
+        labels = _known_role_labels(self.campaign)
+        self.assertLess(len(labels), 400)
+        # The old character slice cut the list mid-entry, which silently broke deduplication.
+        self.assertLessEqual(len(json.dumps(labels, ensure_ascii=False)), 18000)
+        self.assertTrue(all(label.startswith("Bulk Company — ") for label in labels))
 
     def test_user_can_favorite_an_opportunity(self):
         organization = Organization.objects.create(name="Favorite Company")

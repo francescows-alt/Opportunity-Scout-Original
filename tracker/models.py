@@ -74,6 +74,16 @@ class SearchCycle(models.Model):
     added_count = models.PositiveSmallIntegerField(default=0)
     duplicate_count = models.PositiveSmallIntegerField(default=0)
     fee_blocked_count = models.PositiveSmallIntegerField(default=0)
+    raw_results = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Everything the search returned, before the app filtered anything out.",
+    )
+    rejections = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Results the app dropped, each with the reason, so over-filtering stays visible.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -230,6 +240,10 @@ class Opportunity(models.Model):
         EXPIRED = "expired", "Expired"
         UNVERIFIED = "unverified", "Could not verify"
 
+    class QualityFlag(models.TextChoices):
+        GOOD = "good", "Good result"
+        BAD = "bad", "Bad result"
+
     campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="opportunities")
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="opportunities")
     title = models.CharField(max_length=240)
@@ -245,6 +259,25 @@ class Opportunity(models.Model):
         help_text="Set when you write your own next action, so repeated research cannot overwrite it.",
     )
     is_favorite = models.BooleanField(default=False, db_index=True)
+    search_cycle = models.ForeignKey(
+        SearchCycle,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="found_opportunities",
+        help_text="The search that produced this row, so a bad result traces back to its queries.",
+    )
+    quality_flag = models.CharField(
+        max_length=8,
+        choices=QualityFlag.choices,
+        blank=True,
+        db_index=True,
+        help_text="Your verdict on this result. Blank until you say so; never inferred.",
+    )
+    quality_note = models.TextField(
+        blank=True,
+        help_text="Why this result was good or bad, in your own words.",
+    )
     canonical_url = models.URLField(max_length=500, blank=True, db_index=True)
     fingerprint = models.CharField(max_length=64, blank=True, db_index=True)
     deadline = models.DateField(blank=True, null=True)

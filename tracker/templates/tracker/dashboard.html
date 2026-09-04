@@ -45,6 +45,18 @@
     {% if selected_alert %}<div class="context-alert {{ selected_alert.tone }}"><span>{{ selected_alert.icon }}</span><div><strong>{{ selected_alert.title }}</strong><p>{{ selected_alert.text }}</p></div></div>{% endif %}
     <header class="detail-title"><div class="detail-company-heading">{% if selected.organization.logo_url %}<img src="{{ selected.organization.logo_url }}" alt="{{ selected.organization.name }} logo" onerror="this.hidden=true">{% elif selected.organization.website %}<img src="https://www.google.com/s2/favicons?domain_url={{ selected.organization.website|urlencode }}&sz=128" alt="{{ selected.organization.name }} logo" onerror="this.hidden=true">{% endif %}<div><p class="eyebrow">Selected opportunity</p><h2>{{ selected.organization.name }}</h2><p>{{ selected.title }}{% if selected.location %} · {{ selected.location }}{% endif %}</p></div></div><div class="detail-verdict"><form method="post" action="{% url 'opportunity-favorite' selected.id %}">{% csrf_token %}<button class="favorite-button{% if selected.is_favorite %} saved{% endif %}" type="submit">{% if selected.is_favorite %}★ Saved{% else %}☆ Save{% endif %}</button></form><span class="verification-badge verification-{{ selected.verification_status }}">{{ selected.get_verification_status_display }}</span><strong class="detail-score match-{{ selected.match_tone }}">{% if selected.match_score != None %}{{ selected.match_score }}% match{% else %}Not scored{% endif %}</strong></div></header>
 
+    <form class="quality-strip{% if selected.quality_flag %} flagged-{{ selected.quality_flag }}{% endif %}" method="post" action="{% url 'opportunity-quality' selected.id %}">{% csrf_token %}
+        {% if selected.quality_flag %}
+            <p class="quality-verdict"><strong>{% if selected.quality_flag == 'bad' %}✗ You marked this a bad search result{% else %}✓ You marked this a good search result{% endif %}</strong>{% if selected.quality_note %}<small>{{ selected.quality_note }}</small>{% endif %}</p>
+            <button class="quality-button" type="submit" name="flag" value="">Clear</button>
+        {% else %}
+            <label for="quality-note-{{ selected.id }}">Was this a useful thing for Robert to find?</label>
+            <input id="quality-note-{{ selected.id }}" name="note" type="text" maxlength="2000" placeholder="Optional: what is wrong with it?" autocomplete="off">
+            <button class="quality-button good" type="submit" name="flag" value="good">✓ Good</button>
+            <button class="quality-button bad" type="submit" name="flag" value="bad">✗ Bad</button>
+        {% endif %}
+    </form>
+
     <div class="company-strip"><span><b>◉</b><small>Company size</small><strong>{{ selected.company_size|default:"Research needed" }}</strong></span><span><b>⌖</b><small>Headquarters</small><strong>{{ selected.company_country|default:"Research needed" }}</strong></span><span><b>◇</b><small>Industry</small><strong>{{ selected.company_industry|default:"Research needed" }}</strong></span></div>
 
     <nav class="opportunity-links" aria-label="Relevant opportunity links">

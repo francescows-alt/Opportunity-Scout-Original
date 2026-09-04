@@ -249,6 +249,26 @@ def toggle_favorite(request, opportunity_id):
     return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
 
 
+@require_POST
+def flag_quality(request, opportunity_id):
+    """Record Francesco's own verdict on a search result. Labels only: nothing is
+    deleted, hidden or re-run, and no verdict is ever inferred from behaviour."""
+    opportunity = get_object_or_404(Opportunity, pk=opportunity_id)
+    flag = request.POST.get("flag", "").strip()
+    if flag not in dict(Opportunity.QualityFlag.choices):
+        flag = ""
+    opportunity.quality_flag = flag
+    opportunity.quality_note = request.POST.get("note", "").strip()[:2000] if flag else ""
+    opportunity.save(update_fields=["quality_flag", "quality_note", "updated_at"])
+    if flag == Opportunity.QualityFlag.BAD:
+        messages.success(request, "Marked as a bad result. It stays in the list; Robert will use it to fix the search.")
+    elif flag == Opportunity.QualityFlag.GOOD:
+        messages.success(request, "Marked as a good result.")
+    else:
+        messages.success(request, "Verdict cleared.")
+    return redirect(f"{reverse('dashboard')}?selected={opportunity.id}")
+
+
 def _internal_host():
     """Host header for the in-process client the background runners use. Django's
     test runner allows only "testserver"; a local DEBUG server allows localhost."""
@@ -441,6 +461,20 @@ def discover_internships(request):
         added = 0
         duplicates = 0
         fee_blocked = 0
+        # Keep the unfiltered search output and every filtering decision. Without this
+        # there is no way to tell a bad search from an over-eager filter afterwards.
+        raw_results = [item.model_dump(mode="json") for item in batch.opportunities]
+        rejections = []
+        created_ids = []
+
+        def _reject(item, reason):
+            rejections.append({
+                "company": item.company.strip(),
+                "title": item.title.strip(),
+                "source_url": item.source_url.strip(),
+                "reason": reason,
+            })
+
         known_urls = {
             opportunity.canonical_url or _canonicalize_url(opportunity.source_url)
             for opportunity in Opportunity.objects.filter(campaign=campaign)
@@ -456,11 +490,13 @@ def discover_internships(request):
             source_url = item.source_url.strip()
             parsed = urlparse(source_url)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                _reject(item, "invalid_url")
                 continue
             canonical_url = _canonicalize_url(source_url)
             fingerprint = _opportunity_fingerprint(item.company, item.title, item.location)
             if canonical_url in known_urls or fingerprint in known_fingerprints:
                 duplicates += 1
+                _reject(item, "duplicate")
                 continue
             try:
                 with transaction.atomic():
@@ -494,7 +530,7 @@ def discover_internships(request):
                         values["verification_status"] = Opportunity.VerificationStatus.UNSUITABLE
                         values["verified_at"] = timezone.now()
                         values["next_action"] = "Not suitable — candidate fee required"
-                    Opportunity.objects.create(
+                    opportunity = Opportunity.objects.create(
                         campaign=campaign,
                         source_url=source_url,
                         status=Opportunity.Status.DISCOVERED,
@@ -504,15 +540,19 @@ def discover_internships(request):
                 logger.exception(
                     "Skipped one discovered opportunity (%r at %r) after a save error", item.title, item.company,
                 )
+                _reject(item, "save_error")
                 continue
             known_urls.add(canonical_url)
             known_fingerprints.add(fingerprint)
+            created_ids.append(opportunity.pk)
             if item.candidate_fee_required:
                 fee_blocked += 1
+                # Kept in the database as unsuitable, but still a filtering decision worth seeing.
+                _reject(item, "candidate_fee")
             else:
                 added += 1
         next_sequence = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
-        SearchCycle.objects.create(
+        cycle = SearchCycle.objects.create(
             campaign=campaign,
             sequence=next_sequence,
             strategy=batch.search_strategy.strip(),
@@ -522,7 +562,11 @@ def discover_internships(request):
             added_count=added,
             duplicate_count=duplicates,
             fee_blocked_count=fee_blocked,
+            raw_results=raw_results,
+            rejections=rejections,
         )
+        if created_ids:
+            Opportunity.objects.filter(pk__in=created_ids).update(search_cycle=cycle)
         ChatMessage.objects.create(
             scope=ChatMessage.Scope.GENERAL,
             role=ChatMessage.Role.ASSISTANT,

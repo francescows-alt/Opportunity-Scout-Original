@@ -331,6 +331,30 @@ Do not silently turn a preference into a rejection rule.
     return response.output_parsed
 
 
+KNOWN_ROLES_BUDGET = 18000
+
+
+def _known_role_labels(campaign, budget=KNOWN_ROLES_BUDGET):
+    """The "do not find these again" list, trimmed at a whole-entry boundary.
+
+    This used to send role dictionaries and slice the JSON at a character count,
+    which cut the list mid-entry once a campaign held roughly 150 roles — so the
+    search happily returned jobs that were already saved. Compact labels fit far
+    more roles, and dropping whole entries keeps the list valid at any size.
+    """
+    labels = [
+        f"{row['organization__name']} — {row['title']}"[:120]
+        for row in Opportunity.objects.filter(campaign=campaign)
+        .select_related("organization")
+        .order_by("-created_at")
+        .values("organization__name", "title")
+    ]
+    while labels and len(json.dumps(labels, ensure_ascii=False)) > budget:
+        # Newest roles are the ones a fresh search is most likely to rediscover.
+        labels.pop()
+    return labels
+
+
 def research_internships(campaign, profile):
     """Search the live web once and return a small, source-backed discovery batch."""
     campaign_data = {
@@ -350,11 +374,7 @@ def research_internships(campaign, profile):
     )
     cycle_number = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
     required_strategy = SEARCH_STRATEGIES[(cycle_number - 1) % len(SEARCH_STRATEGIES)]
-    known_roles = list(
-        Opportunity.objects.filter(campaign=campaign)
-        .select_related("organization")
-        .values("organization__name", "title", "source_url")[:500]
-    )
+    known_roles = _known_role_labels(campaign)
     response = _client().responses.parse(
         model=settings.OPENAI_CHAT_MODEL,
         tools=[{"type": "web_search"}],
@@ -378,7 +398,7 @@ Return only distinct, useful results. Do not apply, contact anyone, or claim tha
             "ACTIVE SEARCH CAMPAIGN:\n" + json.dumps(campaign_data, ensure_ascii=False, default=str)[:9000]
             + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:9000]
             + "\n\nPREVIOUS SEARCH CYCLES TO AVOID REPEATING:\n" + json.dumps(previous_cycles, ensure_ascii=False, default=str)[:10000]
-            + "\n\nKNOWN ROLES — DO NOT RETURN THESE AGAIN:\n" + json.dumps(known_roles, ensure_ascii=False)[:18000]
+            + "\n\nKNOWN ROLES — DO NOT RETURN THESE AGAIN:\n" + json.dumps(known_roles, ensure_ascii=False)
             + "\n\nSearch broadly enough to include prestigious international firms, strong startups and SMEs, and unexpectedly valuable CV-building work."
         ),
         text_format=InternshipDiscoveryBatch,

@@ -16,6 +16,7 @@ urlpatterns = [
     path("applications/new/", views.opportunity_create, name="opportunity-create"),
     path("applications/<int:opportunity_id>/edit/", views.opportunity_edit, name="opportunity-edit"),
     path("applications/<int:opportunity_id>/favorite/", views.toggle_favorite, name="opportunity-favorite"),
+    path("applications/<int:opportunity_id>/quality/", views.flag_quality, name="opportunity-quality"),
     path("profile/", views.profile, name="profile"),
     path("search-rules/", views.campaign_list, name="campaign-list"),
     path("campaigns/new/", views.campaign_create, name="campaign-create"),
