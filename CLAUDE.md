@@ -82,9 +82,15 @@ when it is fixed, add one when Francesco reports something that is not fixed tod
 - **Inbox items are never analysed by AI.** The Inbox accepts pasted vacancies,
   links, screenshots and PDFs, but nothing turns them into researched
   opportunities. Highest-value gap.
-- **Search quality is not good enough.** Francesco's words. Needs a concrete
-  example of a bad result before touching the prompts — searches cost real money
-  and cannot be re-run freely to test a guess.
+- **Search quality is not good enough.** Francesco's words. The evidence layer
+  now exists (`b13be4a`): each `SearchCycle` stores `raw_results` and
+  `rejections`, every opportunity links back to its `search_cycle`, and the
+  detail panel has a good/bad button writing `quality_flag` and `quality_note`.
+  Still blocked on data: Francesco must run one search and flag the bad results
+  before the prompts in `ai.py` are touched. Do not guess at the wording.
+- **`max_tool_calls=8` versus "up to 12 results"** in `ai.py` `research_internships()`.
+  Eight web searches cannot support twelve well-sourced findings. Francesco has
+  not yet chosen a number; raising it raises the per-search cost, so it is his call.
 - **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
   reverted in `d327198` / `6859116` after it crashed the running server. Redo it
   carefully, and tell Francesco to restart the server before he looks.
