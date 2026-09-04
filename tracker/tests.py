@@ -9,7 +9,7 @@ from django.test.utils import override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch, _known_role_labels
+from .ai import AIUnavailable, DocumentProfileAnalysis, EvidenceItem, InboxAnalysis, InternshipDiscoveryBatch, OpportunityResearchBatch, _known_role_labels, _quality_feedback
 from .models import CandidateProfile, ChatMessage, InboxAttachment, InboxItem, Opportunity, Organization, ProfileDocument, SearchCampaign, SearchCycle, SearchJob
 
 
@@ -252,6 +252,26 @@ class DashboardTests(TestCase):
         # The old character slice cut the list mid-entry, which silently broke deduplication.
         self.assertLessEqual(len(json.dumps(labels, ensure_ascii=False)), 18000)
         self.assertTrue(all(label.startswith("Bulk Company — ") for label in labels))
+
+    def test_flagged_results_are_fed_back_into_the_next_search(self):
+        organization = Organization.objects.create(name="Wrong Company")
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Expired Intern",
+            quality_flag=Opportunity.QualityFlag.BAD, quality_note="Already expired.",
+        )
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Good Intern",
+            quality_flag=Opportunity.QualityFlag.GOOD, quality_note="Exactly right.",
+        )
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Unjudged Intern",
+        )
+        feedback = _quality_feedback(self.campaign)
+        # Only rows Francesco judged himself. An unflagged row is unjudged, not approved.
+        self.assertEqual({entry["title"] for entry in feedback}, {"Expired Intern", "Good Intern"})
+        bad = next(entry for entry in feedback if entry["verdict"] == "bad")
+        self.assertEqual(bad["why"], "Already expired.")
+        self.assertEqual(bad["company"], "Wrong Company")
 
     def test_user_can_favorite_an_opportunity(self):
         organization = Organization.objects.create(name="Favorite Company")

@@ -355,6 +355,33 @@ def _known_role_labels(campaign, budget=KNOWN_ROLES_BUDGET):
     return labels
 
 
+QUALITY_FEEDBACK_BUDGET = 6000
+
+
+def _quality_feedback(campaign, budget=QUALITY_FEEDBACK_BUDGET):
+    """Francesco's own verdicts on earlier results, so each search learns from the last.
+
+    Only rows he flagged himself are included. Nothing here is inferred from his
+    behaviour: an unflagged result is an unjudged result, not an approved one.
+    """
+    entries = [
+        {
+            "verdict": row.quality_flag,
+            "company": row.organization.name,
+            "title": row.title,
+            "why": row.quality_note[:300],
+        }
+        for row in Opportunity.objects.filter(campaign=campaign)
+        .exclude(quality_flag="")
+        .select_related("organization")
+        .order_by("-updated_at")
+    ]
+    while entries and len(json.dumps(entries, ensure_ascii=False)) > budget:
+        # Oldest verdicts go first; the newest reflect what he thinks now.
+        entries.pop()
+    return entries
+
+
 def research_internships(campaign, profile):
     """Search the live web once and return a small, source-backed discovery batch."""
     campaign_data = {
@@ -375,6 +402,7 @@ def research_internships(campaign, profile):
     cycle_number = (SearchCycle.objects.filter(campaign=campaign).order_by("-sequence").values_list("sequence", flat=True).first() or 0) + 1
     required_strategy = SEARCH_STRATEGIES[(cycle_number - 1) % len(SEARCH_STRATEGIES)]
     known_roles = _known_role_labels(campaign)
+    quality_feedback = _quality_feedback(campaign)
     response = _client().responses.parse(
         model=settings.OPENAI_CHAT_MODEL,
         tools=[{"type": "web_search"}],
@@ -389,6 +417,8 @@ The requested dates may be in the future. Do not claim a role supports those dat
 Notice whether each vacancy itself is written in English, Japanese, or both. Do not confuse posting language with a stated language qualification: a Japanese-language page is useful practical evidence, but it does not prove that native Japanese is required.
 Score fit conservatively against verified facts. The description and fit summary must clearly distinguish confirmed facts from unknowns.
 Use missing_information for visa support, exact dates, thesis compatibility, Japanese level, or work arrangement when the source does not establish them.
+USER VERDICTS is Francesco's own judgement on results you returned before. Treat it as the most important correction available to you.
+For each entry marked bad, read his reason and avoid returning results that would fail for that same reason. Fix the cause, not the example: if he called a result expired, check the posting is still open; if he said the research was thin, prefer sources with real detail. Do not over-correct — one bad company is not a reason to abandon its whole industry, city or size band. Entries marked good show what he wants more of.
 Do not return any role or company already present in KNOWN ROLES, even if you find it through a different URL or slightly different title. Use the required strategy for this cycle, vary the keywords from previous cycles, and report the actual queries and source types used.
 Return only distinct, useful results. Do not apply, contact anyone, or claim that any action was taken.
 """,
@@ -399,6 +429,7 @@ Return only distinct, useful results. Do not apply, contact anyone, or claim tha
             + "\n\nVERIFIED CANDIDATE PROFILE:\n" + json.dumps(profile_data, ensure_ascii=False)[:9000]
             + "\n\nPREVIOUS SEARCH CYCLES TO AVOID REPEATING:\n" + json.dumps(previous_cycles, ensure_ascii=False, default=str)[:10000]
             + "\n\nKNOWN ROLES — DO NOT RETURN THESE AGAIN:\n" + json.dumps(known_roles, ensure_ascii=False)
+            + "\n\nUSER VERDICTS ON EARLIER RESULTS:\n" + json.dumps(quality_feedback, ensure_ascii=False)
             + "\n\nSearch broadly enough to include prestigious international firms, strong startups and SMEs, and unexpectedly valuable CV-building work."
         ),
         text_format=InternshipDiscoveryBatch,

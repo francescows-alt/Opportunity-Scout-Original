@@ -86,8 +86,9 @@ when it is fixed, add one when Francesco reports something that is not fixed tod
   now exists (`b13be4a`): each `SearchCycle` stores `raw_results` and
   `rejections`, every opportunity links back to its `search_cycle`, and the
   detail panel has a good/bad button writing `quality_flag` and `quality_note`.
-  Still blocked on data: Francesco must run one search and flag the bad results
-  before the prompts in `ai.py` are touched. Do not guess at the wording.
+  The loop is closed: `_quality_feedback()` sends his flags into every later
+  search as USER VERDICTS. Each search now learns from the last. Still do not
+  guess at prompt wording — read his flags first.
 - **`max_tool_calls=8` versus "up to 12 results"** in `ai.py` `research_internships()`.
   Eight web searches cannot support twelve well-sourced findings. Francesco has
   not yet chosen a number; raising it raises the per-search cost, so it is his call.

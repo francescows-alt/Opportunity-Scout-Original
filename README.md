@@ -41,7 +41,8 @@ The application runs only while that terminal command is active. Press
 - Analyze job-inbox material and run source-backed web research with Robert
 - Run complete search cycles with visible progress, duplicate and fee checks
 - Keep a record of what each search returned and what was filtered out, and mark
-  any result good or bad so the searches can be improved from real examples
+  any result good or bad. Every later search is told about those verdicts, so the
+  searches get more tailored to you each time you use them
 - Research vacancy language, timing, company facts, qualifications, and fit
 - Build campaigns conversationally with Robert, then edit every setting manually
 - Ask Robert for hiring advice from anywhere in the app
