@@ -59,6 +59,28 @@ def _canonicalize_url(url):
     return urlunsplit(("https", host, path, query, ""))
 
 
+TRACKING_QUERY_PREFIXES = ("utm_", "mc_", "pk_")
+TRACKING_QUERY_KEYS = {"fbclid", "gclid", "msclkid", "igshid", "ref", "ref_src", "trk", "trkcampaign"}
+
+
+def _strip_tracking(url):
+    """Keep the link a human can click, minus the analytics junk that rides along
+    when a page is shared. `utm_source=chatgpt.com` in a saved vacancy looks wrong."""
+    parsed = urlsplit(url.strip())
+    kept = [
+        (key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in TRACKING_QUERY_KEYS
+        and not key.lower().startswith(TRACKING_QUERY_PREFIXES)
+    ]
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(kept), parsed.fragment))
+
+
+def _plain_text(value):
+    """Robert sometimes cites sources as Markdown links. Templates show raw text,
+    so flatten `[label](url)` to `label` before storing anything user-visible."""
+    return re.sub(r"\[([^\]]+)\]\((?:[^)]+)\)", r"\1", value).strip()
+
+
 LOGO_IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".svg", ".webp", ".gif", ".ico")
 
 
@@ -982,8 +1004,8 @@ def inbox_analyze(request, item_id):
         messages.error(request, "Robert could not read that one. Nothing was changed; please try again.")
         return redirect("inbox")
 
-    note = analysis.note.strip()
-    source_url = analysis.source_url.strip()
+    note = _plain_text(analysis.note)
+    source_url = _strip_tracking(analysis.source_url)
     parsed = urlparse(source_url)
     usable_link = parsed.scheme in {"http", "https"} and bool(parsed.netloc)
     if not analysis.is_opportunity or analysis.needs_more_information or not usable_link or not analysis.company.strip():
@@ -1017,10 +1039,13 @@ def inbox_analyze(request, item_id):
                     name=analysis.company.strip(), location=analysis.location.strip(),
                 )
             missing = "\n".join(f"Unknown: {fact}" for fact in analysis.missing_information)
-            fit_summary = analysis.fit_summary.strip()
+            fit_summary = _plain_text(analysis.fit_summary)
             if missing:
                 fit_summary = f"{fit_summary}\n\nStill to verify:\n{missing}"
             opportunity = Opportunity.objects.create(
+                # Robert's reading travels with the role, so a caveat raised while
+                # reading the inbox is not lost the moment you open the application.
+                notes=f"From your job inbox:\n{note}" if note else "",
                 campaign=campaign,
                 organization=organization,
                 title=analysis.title.strip(),

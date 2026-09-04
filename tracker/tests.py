@@ -851,6 +851,23 @@ class InboxTests(TestCase):
         self.assertIsNotNone(item.analyzed_at)
 
     @patch("tracker.views.analyze_inbox_item")
+    def test_analysis_cleans_the_link_and_keeps_roberts_caveat(self, analyze):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        item = InboxItem.objects.create(
+            campaign=self.campaign, request_type=InboxItem.RequestType.JOB, content="A vacancy",
+        )
+        analyze.return_value = _inbox_analysis(
+            source_url="https://nihongrowth.example/careers/intern?gh_jid=42&utm_source=chatgpt.com&fbclid=xyz",
+            note="Real posting, but the six-month minimum may not fit ([nihongrowth.example](https://nihongrowth.example/about)).",
+        )
+        self.client.post(reverse("inbox-analyze", args=[item.id]))
+
+        opportunity = Opportunity.objects.get()
+        self.assertEqual(opportunity.source_url, "https://nihongrowth.example/careers/intern?gh_jid=42")
+        self.assertIn("six-month minimum may not fit (nihongrowth.example)", opportunity.notes)
+        self.assertNotIn("](", opportunity.notes)
+
+    @patch("tracker.views.analyze_inbox_item")
     def test_analysis_asks_for_more_instead_of_guessing(self, analyze):
         CandidateProfile.objects.create(pk=1, profile_draft="Business student")
         item = InboxItem.objects.create(
