@@ -10,6 +10,7 @@ urlpatterns = [
     path("applications/search/start/", views.start_complete_search, name="search-start"),
     path("applications/research/start/", views.start_research_only, name="research-start"),
     path("applications/search/<int:job_id>/status/", views.search_job_status, name="search-job-status"),
+    path("applications/search/<int:job_id>/stop/", views.stop_search_job, name="search-job-stop"),
     path("applications/qualify/", views.qualify_discoveries, name="qualify-discoveries"),
     path("inbox/", views.inbox, name="inbox"),
     path("inbox/<int:item_id>/analyze/", views.inbox_analyze, name="inbox-analyze"),

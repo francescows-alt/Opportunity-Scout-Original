@@ -211,35 +211,25 @@ def _rank_by_liveness(queryset):
     ).order_by("is_dead", "-match_score", "-created_at")
 
 
-def _today_list(queryset, limit=5):
-    """The few things actually worth his attention right now.
+def _deadline_alerts(queryset, limit=4):
+    """Only the things the sorted list below cannot already tell him.
 
-    Deadlines first, because they expire whether or not he looks. Then the
-    strongest verified opportunities. Nothing dead ever appears here.
+    The first version of this panel filled itself with the highest-scoring rows,
+    which turned out to be the exact five rows shown immediately underneath it —
+    300px of screen repeating itself. It now shows deadlines and nothing else, and
+    disappears entirely when nothing is due.
     """
-    live = queryset.exclude(verification_status__in=DEAD_VERDICTS).exclude(deleted_at__isnull=False)
-    soon = timezone.localdate() + timedelta(days=21)
-    urgent = list(
-        live.filter(deadline__isnull=False, deadline__gte=timezone.localdate(), deadline__lte=soon)
+    today = timezone.localdate()
+    rows = list(
+        queryset.exclude(verification_status__in=DEAD_VERDICTS)
+        .filter(deleted_at__isnull=True, deadline__isnull=False, deadline__gte=today)
+        .filter(deadline__lte=today + timedelta(days=45))
+        .select_related("organization")
         .order_by("deadline")[:limit]
     )
-    chosen = {item.id for item in urgent}
-    strong = [
-        item for item in live.filter(
-            verification_status=Opportunity.VerificationStatus.QUALIFIED,
-        ).order_by("-match_score")[:limit]
-        if item.id not in chosen
-    ]
-    chosen.update(item.id for item in strong)
-    rows = (urgent + strong)[:limit]
-    if len(rows) < limit:
-        rows += [
-            item for item in live.order_by("-match_score")[: limit * 2]
-            if item.id not in chosen
-        ][: limit - len(rows)]
     for item in rows:
+        item.days_left = (item.deadline - today).days
         item.match_tone = _score_tone(item.match_score)
-        item.days_left = (item.deadline - timezone.localdate()).days if item.deadline else None
     return rows
 
 
@@ -333,7 +323,7 @@ def dashboard(request):
             verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
         "favorites_count": all_opportunities.filter(is_favorite=True).count(),
-        "today_rows": _today_list(all_opportunities) if not review and not query and not status else [],
+        "deadline_rows": _deadline_alerts(all_opportunities) if not review and not query and not status else [],
         "needs_check_count": all_opportunities.filter(link_check_status__in=[
             Opportunity.LinkCheck.NOT_FOUND, Opportunity.LinkCheck.LANDING_PAGE,
         ]).count(),
@@ -600,7 +590,7 @@ def _require_campaign_and_profile():
     return campaign, profile, None
 
 
-STALE_JOB_MINUTES = 10
+STALE_JOB_MINUTES = 5
 
 
 def _expire_stale_jobs():
@@ -621,14 +611,19 @@ def _expire_stale_jobs():
     )
 
 
-def _launch_background_job(campaign, runner):
-    """Reuse one active SearchJob if one is already running, otherwise start a new
-    background thread. Shared by the full search and the research-only retry."""
+def _launch_background_job(campaign, runner, kind=SearchJob.Kind.SEARCH):
+    """Reuse one active SearchJob of this kind, otherwise start a new thread.
+
+    Kinds are independent on purpose. A stuck link check used to make the whole
+    Search button unusable, because any active job was treated as "already running".
+    """
     _expire_stale_jobs()
-    active = SearchJob.objects.filter(status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING]).order_by("-created_at").first()
+    active = SearchJob.objects.filter(
+        kind=kind, status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING],
+    ).order_by("-created_at").first()
     if active:
         return JsonResponse({"job_id": active.id, "status_url": reverse("search-job-status", args=[active.id])})
-    job = SearchJob.objects.create(campaign=campaign)
+    job = SearchJob.objects.create(campaign=campaign, kind=kind)
     Thread(target=runner, args=(job.id,), daemon=True).start()
     return JsonResponse({"job_id": job.id, "status_url": reverse("search-job-status", args=[job.id])}, status=202)
 
@@ -740,7 +735,7 @@ def start_link_check(request):
     campaign = SearchCampaign.objects.filter(is_active=True).first()
     if not campaign:
         return JsonResponse({"error": "Create and activate a search campaign first."}, status=400)
-    return _launch_background_job(campaign, _run_link_check_all)
+    return _launch_background_job(campaign, _run_link_check_all, SearchJob.Kind.LINK_CHECK)
 
 
 @require_POST
@@ -751,7 +746,19 @@ def start_research_only(request):
     pending_count = Opportunity.objects.filter(campaign=campaign).filter(_incomplete_research_filter()).count()
     if not pending_count:
         return JsonResponse({"error": "There are no discoveries waiting for research."}, status=400)
-    return _launch_background_job(campaign, _run_research_only)
+    return _launch_background_job(campaign, _run_research_only, SearchJob.Kind.RESEARCH)
+
+
+@require_POST
+def stop_search_job(request, job_id):
+    """Let him end a run that is going nowhere, instead of waiting out the sweep."""
+    SearchJob.objects.filter(
+        pk=job_id, status__in=[SearchJob.Status.QUEUED, SearchJob.Status.RUNNING],
+    ).update(
+        status=SearchJob.Status.FAILED, stage="failed", progress=100,
+        message="Stopped by you. Nothing was damaged.", updated_at=timezone.now(),
+    )
+    return JsonResponse({"stopped": True})
 
 
 def search_job_status(request, job_id):
@@ -764,6 +771,45 @@ def search_job_status(request, job_id):
         "researched": job.researched_count, "duplicates": job.duplicate_count,
         "fees": job.fee_blocked_count, "opportunity_ids": job.opportunity_ids,
     })
+
+
+def _seen_roles(campaign):
+    """Every role this campaign has EVER held, including deleted and discarded ones.
+
+    This is the permanent ledger. A role that was deleted, or that Francesco marked
+    bad, must never be able to come back as a fresh row from a later search or from
+    the inbox. It is built from every row in the campaign, not just the visible ones.
+    """
+    rows = list(Opportunity.objects.filter(campaign=campaign).select_related("organization"))
+    urls = {
+        row.canonical_url or _canonicalize_url(row.source_url)
+        for row in rows if row.source_url
+    }
+    fingerprints = {
+        row.fingerprint or _opportunity_fingerprint(
+            row.organization.name, row.title, row.location,
+        )
+        for row in rows
+    }
+    role_keys = {_loose_role_key(row.organization.name, row.title) for row in rows}
+    # Roles he threw away or flagged bad: these are refused outright, not merged.
+    rejected_keys = {
+        _loose_role_key(row.organization.name, row.title)
+        for row in rows
+        if row.deleted_at is not None or row.quality_flag == Opportunity.QualityFlag.BAD
+    }
+    return urls, fingerprints, role_keys, rejected_keys
+
+
+def _already_known(canonical_url, fingerprint, role_key, urls, fingerprints, role_keys, rejected_keys):
+    """Return a rejection reason, or None when this role is genuinely new."""
+    if _is_near_duplicate(role_key, rejected_keys):
+        return "previously_discarded"
+    if canonical_url in urls or fingerprint in fingerprints:
+        return "duplicate"
+    if _is_near_duplicate(role_key, role_keys):
+        return "near_duplicate"
+    return None
 
 
 @require_POST
@@ -796,22 +842,7 @@ def discover_internships(request):
                 "reason": reason,
             })
 
-        known_urls = {
-            opportunity.canonical_url or _canonicalize_url(opportunity.source_url)
-            for opportunity in Opportunity.objects.filter(campaign=campaign)
-            if opportunity.source_url
-        }
-        existing = list(Opportunity.objects.filter(campaign=campaign).select_related("organization"))
-        known_fingerprints = {
-            opportunity.fingerprint or _opportunity_fingerprint(
-                opportunity.organization.name, opportunity.title, opportunity.location,
-            )
-            for opportunity in existing
-        }
-        known_role_keys = {
-            _loose_role_key(opportunity.organization.name, opportunity.title)
-            for opportunity in existing
-        }
+        known_urls, known_fingerprints, known_role_keys, rejected_keys = _seen_roles(campaign)
         for item in batch.opportunities:
             source_url = item.source_url.strip()
             parsed = urlparse(source_url)
@@ -821,15 +852,13 @@ def discover_internships(request):
             canonical_url = _canonicalize_url(source_url)
             fingerprint = _opportunity_fingerprint(item.company, item.title, item.location)
             role_key = _loose_role_key(item.company, item.title)
-            if canonical_url in known_urls or fingerprint in known_fingerprints:
+            reason = _already_known(
+                canonical_url, fingerprint, role_key,
+                known_urls, known_fingerprints, known_role_keys, rejected_keys,
+            )
+            if reason:
                 duplicates += 1
-                _reject(item, "duplicate")
-                continue
-            if _is_near_duplicate(role_key, known_role_keys):
-                # Same company, near-identical role, different URL. This is how the
-                # two fabricated Tencent "Marketing Intern" rows both got saved.
-                duplicates += 1
-                _reject(item, "near_duplicate")
+                _reject(item, reason)
                 continue
             try:
                 with transaction.atomic():
@@ -1443,14 +1472,27 @@ def _save_inbox_reading(item, campaign, analysis):
 
     canonical_url = _canonicalize_url(source_url)
     fingerprint = _opportunity_fingerprint(analysis.company, analysis.title, analysis.location)
+    role_key = _loose_role_key(analysis.company, analysis.title)
+    # The inbox used to match only on an exact URL or exact title, so the same
+    # internship worded slightly differently came back as a brand new row.
     existing = Opportunity.objects.filter(campaign=campaign).filter(
         Q(canonical_url=canonical_url) | Q(fingerprint=fingerprint),
     ).first()
+    if existing is None:
+        for row in Opportunity.objects.filter(campaign=campaign).select_related("organization"):
+            if _is_near_duplicate(role_key, [_loose_role_key(row.organization.name, row.title)]):
+                existing = row
+                break
     if existing:
+        if existing.deleted_at is not None:
+            note = f"You already threw this away: “{existing.title}”. It was not added again."
+        elif existing.quality_flag == Opportunity.QualityFlag.BAD:
+            note = f"You marked this a bad result before: “{existing.title}”. It was not added again."
+        else:
+            note = f"Already saved as “{existing.title}”. Linked to the application you already have."
         InboxItem.objects.filter(pk=item.pk).update(
             status=InboxItem.Status.PROCESSED, opportunity=existing,
-            analysis_note=f"Already saved as “{existing.title}”. Linked to the application you already have.",
-            analyzed_at=timezone.now(),
+            analysis_note=note, analyzed_at=timezone.now(),
         )
         return existing
 

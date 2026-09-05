@@ -102,7 +102,16 @@ class SearchJob(models.Model):
         COMPLETE = "complete", "Complete"
         FAILED = "failed", "Failed"
 
+    class Kind(models.TextChoices):
+        SEARCH = "search", "Full search"
+        RESEARCH = "research", "Deep research"
+        LINK_CHECK = "link_check", "Link check"
+
     campaign = models.ForeignKey(SearchCampaign, on_delete=models.CASCADE, related_name="search_jobs")
+    kind = models.CharField(
+        max_length=16, choices=Kind.choices, default=Kind.SEARCH, db_index=True,
+        help_text="Different kinds run independently: a link check must never block a search.",
+    )
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.QUEUED, db_index=True)
     stage = models.CharField(max_length=32, default="queued")
     progress = models.PositiveSmallIntegerField(default=3)

@@ -56,8 +56,22 @@ document.addEventListener("DOMContentLoaded", () => {
         let jobId = statusUrl?.match(/search\/(\d+)\/status/)?.[1] || "";
         let polling = false;
 
+        const stopButton = progressPanel.querySelector("[data-search-stop]");
+        if (stopButton) {
+            stopButton.addEventListener("click", () => {
+                if (!jobId) return;
+                const token = document.querySelector("[name=csrfmiddlewaretoken]");
+                stopButton.disabled = true;
+                fetch(`/applications/search/${jobId}/stop/`, {
+                    method: "POST",
+                    headers: { "X-CSRFToken": token ? token.value : "" },
+                }).finally(() => window.location.reload());
+            });
+        }
+
         function renderProgress(data) {
             progressPanel.hidden = false;
+            if (stopButton) stopButton.hidden = !(data.status === "running" || data.status === "queued");
             progressPanel.classList.remove("idle");
             progressPanel.classList.add("active");
             stageText.textContent = data.message;

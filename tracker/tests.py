@@ -377,6 +377,68 @@ class DashboardTests(TestCase):
         cycle = SearchCycle.objects.get()
         self.assertEqual([entry["reason"] for entry in cycle.rejections], ["near_duplicate"])
 
+    @patch("tracker.views.research_internships")
+    def test_discarded_roles_never_come_back(self, research):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        organization = Organization.objects.create(name="Ghost Co")
+        # One he threw away, one he flagged bad. Neither may return.
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Marketing Intern",
+            deleted_at=timezone.now(), deleted_by=Opportunity.DeletedBy.YOU,
+        )
+        Opportunity.objects.create(
+            campaign=self.campaign, organization=organization, title="Sales Intern",
+            quality_flag=Opportunity.QualityFlag.BAD, quality_note="Useless.",
+        )
+
+        def found(title, url):
+            return {
+                "company": "Ghost Co", "title": title, "kind": "advertised",
+                "location": "Tokyo, Japan", "source_url": url,
+                "description": "x", "match_score": 70, "fit_summary": "x",
+                "missing_information": [], "candidate_fee_required": False,
+                "candidate_fee": "None", "compensation": "Not stated", "next_action": "None",
+            }
+
+        research.return_value = InternshipDiscoveryBatch(
+            summary="s", search_strategy="ATS", queries_used=["q"], sources_searched=["s"],
+            opportunities=[
+                # Reworded, and at a brand new URL. Still the same job.
+                found("Marketing Intern, Brand Team", "https://ghost.example/jobs/999"),
+                found("Sales Intern — Tokyo", "https://ghost.example/jobs/1000"),
+            ],
+        )
+        self.client.post(reverse("discover-internships"))
+
+        self.assertEqual(Opportunity.objects.count(), 2)
+        cycle = SearchCycle.objects.get()
+        self.assertEqual(
+            sorted(entry["reason"] for entry in cycle.rejections),
+            ["previously_discarded", "previously_discarded"],
+        )
+
+    @patch("tracker.views.Thread")
+    def test_a_link_check_does_not_block_a_search(self, thread):
+        CandidateProfile.objects.create(pk=1, profile_draft="Business student")
+        SearchCampaign.objects.filter(pk=self.campaign.pk).update(is_active=True)
+        SearchJob.objects.create(
+            campaign=self.campaign, kind=SearchJob.Kind.LINK_CHECK,
+            status=SearchJob.Status.RUNNING, stage="checking",
+        )
+        response = self.client.post(reverse("search-start"))
+        # A running link check used to make the Search button permanently dead.
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(SearchJob.objects.filter(kind=SearchJob.Kind.SEARCH).count(), 1)
+
+    def test_a_run_can_be_stopped(self):
+        job = SearchJob.objects.create(
+            campaign=self.campaign, status=SearchJob.Status.RUNNING, stage="checking",
+        )
+        self.client.post(reverse("search-job-stop", args=[job.id]))
+        job.refresh_from_db()
+        self.assertEqual(job.status, SearchJob.Status.FAILED)
+        self.assertIn("Stopped by you", job.message)
+
     def test_user_can_favorite_an_opportunity(self):
         organization = Organization.objects.create(name="Favorite Company")
         opportunity = Opportunity.objects.create(

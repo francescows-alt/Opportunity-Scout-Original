@@ -21,8 +21,8 @@
 {% endif %}
 
 {% if not selected or active_search_job %}
-<section class="search-progress-panel{% if active_search_job %} active{% else %} idle{% endif %}" data-search-progress>
-    <div class="search-progress-heading"><span class="robert-search-orb">R</span><div><strong data-search-stage>{% if active_search_job %}{{ active_search_job.message }}{% else %}Robert is ready for a complete search{% endif %}</strong><small>{% if active_search_job %}Live progress — you can leave this page open{% else %}Press “Find &amp; research internships” to start{% endif %}</small></div><b data-search-percent>{% if active_search_job %}{{ active_search_job.progress }}{% else %}Ready{% endif %}</b></div>
+<section class="search-progress-panel{% if active_search_job %} active{% else %} idle{% endif %}" data-search-progress {% if not active_search_job %}hidden{% endif %}>
+    <div class="search-progress-heading"><span class="robert-search-orb">R</span><div><strong data-search-stage>{% if active_search_job %}{{ active_search_job.message }}{% else %}Robert is ready for a complete search{% endif %}</strong><small>{% if active_search_job %}Live progress — you can leave this page open{% else %}Press “Find &amp; research internships” to start{% endif %}</small></div><b data-search-percent>{% if active_search_job %}{{ active_search_job.progress }}{% else %}Ready{% endif %}</b><button class="quality-button" type="button" data-search-stop hidden>Stop</button></div>
     <div class="search-progress-track"><span data-search-bar style="width:{% if active_search_job %}{{ active_search_job.progress }}{% else %}0{% endif %}%"></span></div>
     <div class="search-stage-dots"><span data-stage="searching">Search</span><span data-stage="checking">Checks</span><span data-stage="researching">Research</span><span data-stage="saving">Save</span><span data-stage="complete">Done</span></div>
 </section>
@@ -31,12 +31,12 @@
 {% if not selected %}
 {% if completed_search_job %}<div class="search-result-banner"><span>✓</span><div><strong>Robert finished the full cycle</strong><p>{{ completed_search_job.researched_count }} researched · {{ completed_search_job.added_count }} added · {{ completed_search_job.duplicate_count }} duplicates blocked · {{ completed_search_job.fee_blocked_count }} fee programs excluded</p></div></div>{% endif %}
 
-{% if today_rows %}
-<section class="today-panel" aria-label="What needs you now">
-    <div class="today-head"><h2>What needs you</h2><small>{{ tracked_count }} tracked · {{ serious_count }} qualified</small></div>
-    {% for row in today_rows %}
+{% if deadline_rows %}
+<section class="today-panel" aria-label="Deadlines coming up">
+    <div class="today-head"><h2>Deadlines coming up</h2><small>{{ tracked_count }} tracked · {{ serious_count }} qualified</small></div>
+    {% for row in deadline_rows %}
     <a class="today-row" href="?selected={{ row.id }}">
-        {% if row.days_left != None %}<b class="today-when{% if row.days_left <= 7 %} urgent{% endif %}">{% if row.days_left == 0 %}Today{% elif row.days_left == 1 %}1 day{% else %}{{ row.days_left }} days{% endif %}</b>{% else %}<b class="today-when match-{{ row.match_tone }}">{% if row.match_score != None %}{{ row.match_score }}%{% else %}—{% endif %}</b>{% endif %}
+        <b class="today-when{% if row.days_left <= 7 %} urgent{% endif %}">{% if row.days_left == 0 %}Today{% elif row.days_left == 1 %}1 day{% else %}{{ row.days_left }} days{% endif %}</b>
         <span class="today-what"><strong>{{ row.organization.name }}</strong><small>{{ row.title }}</small></span>
         <small class="today-next">{{ row.next_action|default:"Open and decide"|truncatewords:8 }}</small>
     </a>

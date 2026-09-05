@@ -179,3 +179,47 @@ action first in one line, and nothing else unless he asks. No "worth flagging",
 no "one judgement call", no offering alternatives he did not ask for. If an
 explanation is genuinely needed, it comes after the action and stays under three
 lines.
+
+---
+
+## 2026-09-05 — A panel that repeated the list underneath it
+
+**What happened.** Asked to improve the UI, I added a "What needs you" panel to the
+top of Applications. Francesco: *"what needs you panel its shit"*. He was right,
+and the reason was measurable: the panel filled itself with the highest-scoring
+rows, which were the exact five rows displayed immediately below it. 300px of
+screen repeating itself.
+
+**Why it mattered.** I had already sorted the list by liveness in the same change.
+Once the list put the best rows first, a panel of "the best rows" had nothing left
+to say. I shipped both halves without checking that the second half still earned
+its place, and I never compared the two lists — one query would have shown they
+were identical.
+
+**Rule now.** A summary must show something its own list cannot. Before adding a
+panel above a list, print both and diff them; if the sets match, the panel is
+decoration. The panel now shows deadlines only and disappears when nothing is due.
+
+---
+
+## 2026-09-05 — Dedupe I never watched run
+
+**What happened.** *"the ai keeps finding the same internship and just repost them
+... also reproposing internships we discarded"*. I had added near-duplicate
+detection to the discovery path and tested it with mocks. I never checked the
+inbox path, which creates opportunities through completely different code and
+matched only on an exact URL or exact title. I also never made a discarded or
+deleted role block a future re-add — the flags were passed to the model as advice
+and nothing enforced them.
+
+Worse, every real `SearchCycle` in his database recorded `duplicate_count=0`. The
+dedupe I had written had never once fired against real data, and I reported it as
+done.
+
+**Why it mattered.** Two code paths create opportunities. Fixing one and claiming
+the problem was solved meant the bug stayed, and he found it before I did.
+
+**Rule now.** When fixing a rule about data, find every path that writes that data
+first — `grep "objects.create"` — and fix all of them. Then check the real
+database for evidence the rule has actually fired. A counter that reads zero after
+four runs means the feature does not work, whatever the tests say.
