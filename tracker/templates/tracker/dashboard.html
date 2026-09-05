@@ -9,7 +9,7 @@
 
 <section class="discovery-bar">
     <div class="discovery-icon">R</div>
-    <div><p class="eyebrow">Autonomous discovery</p><h2>Let Robert search first</h2><p>Robert searches, verifies sources and adds possibilities. He never applies.</p></div>
+    <div>{% if not tracked_count %}<p class="eyebrow">Autonomous discovery</p><h2>Let Robert search first</h2><p>Robert searches, verifies sources and adds possibilities. He never applies.</p>{% else %}<h2>Robert can search again</h2><p>He never applies or contacts anyone.</p>{% endif %}</div>
     {% if active_campaign %}
     <div class="discovery-actions">
         <form method="post" action="{% url 'search-start' %}" data-background-job-form data-active-status-url="{% if active_search_job %}{% url 'search-job-status' active_search_job.id %}{% endif %}">{% csrf_token %}<button class="button primary" type="submit" {% if not ai_configured %}disabled{% endif %}>Find &amp; research internships</button></form>
@@ -31,9 +31,18 @@
 {% if not selected %}
 {% if completed_search_job %}<div class="search-result-banner"><span>✓</span><div><strong>Robert finished the full cycle</strong><p>{{ completed_search_job.researched_count }} researched · {{ completed_search_job.added_count }} added · {{ completed_search_job.duplicate_count }} duplicates blocked · {{ completed_search_job.fee_blocked_count }} fee programs excluded</p></div></div>{% endif %}
 
-<section class="stats-grid" aria-label="Application totals">
-    <article><span>Tracked</span><strong>{{ tracked_count }}</strong></article><article><span>Draft ready</span><strong>{{ draft_count }}</strong></article><article><span>CVs sent</span><strong>{{ sent_count }}</strong></article><article><span>Needs action</span><strong>{{ action_count }}</strong></article>
+{% if today_rows %}
+<section class="today-panel" aria-label="What needs you now">
+    <div class="today-head"><h2>What needs you</h2><small>{{ tracked_count }} tracked · {{ serious_count }} qualified</small></div>
+    {% for row in today_rows %}
+    <a class="today-row" href="?selected={{ row.id }}">
+        {% if row.days_left != None %}<b class="today-when{% if row.days_left <= 7 %} urgent{% endif %}">{% if row.days_left == 0 %}Today{% elif row.days_left == 1 %}1 day{% else %}{{ row.days_left }} days{% endif %}</b>{% else %}<b class="today-when match-{{ row.match_tone }}">{% if row.match_score != None %}{{ row.match_score }}%{% else %}—{% endif %}</b>{% endif %}
+        <span class="today-what"><strong>{{ row.organization.name }}</strong><small>{{ row.title }}</small></span>
+        <small class="today-next">{{ row.next_action|default:"Open and decide"|truncatewords:8 }}</small>
+    </a>
+    {% endfor %}
 </section>
+{% endif %}
 
 <nav class="review-tabs" aria-label="Opportunity review groups">
     <a class="{% if not current_review %}current{% endif %}" href="{% url 'dashboard' %}">All <span>{{ tracked_count }}</span></a><a class="{% if current_review == 'serious' %}current{% endif %}" href="?review=serious">Serious list <span>{{ serious_count }}</span></a><a class="{% if current_review == 'clarify' %}current{% endif %}" href="?review=clarify">Needs clarification <span>{{ clarify_count }}</span></a><a class="{% if current_review == 'research' %}current{% endif %}" href="?review=research">Research needed <span>{{ research_needed_count }}</span></a><a class="{% if current_review == 'favorites' %}current{% endif %}" href="?review=favorites">★ Favorites <span>{{ favorites_count }}</span></a><a class="{% if current_review == 'not_suitable' %}current{% endif %}" href="?review=not_suitable">Not suitable</a><a class="{% if current_review == 'check' %}current{% endif %}" href="?review=check">Needs checking <span>{{ needs_check_count }}</span></a><a class="{% if current_review == 'deleted' %}current{% endif %}" href="?review=deleted">Deleted <span>{{ deleted_count }}</span></a>
@@ -114,19 +123,19 @@
 {% endif %}
 
 <section class="opportunity-list-section">
-    <div class="list-section-heading"><p class="eyebrow">Your pipeline</p><h2>{% if selected %}Other opportunities{% else %}Opportunities{% endif %}</h2></div>
+    <div class="list-section-heading"><h2>{% if selected %}Other opportunities{% else %}Opportunities{% endif %}</h2></div>
     <form method="get" class="filters">{% if current_review %}<input type="hidden" name="review" value="{{ current_review }}">{% endif %}<label class="search-box"><span>⌕</span><input type="search" name="q" value="{{ query }}" placeholder="Search company, role, or location"></label><select name="status" aria-label="Filter by status" onchange="this.form.submit()"><option value="">All applications</option>{% for value, label in statuses %}<option value="{{ value }}" {% if current_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="button secondary" type="submit">Search</button></form>
     {% if page.object_list %}
     <section class="applications-table">
         <div class="table-header"><span>Company and role</span><span>Industry</span><span>Size</span><span>Match</span><span>Status</span><span>Next</span></div>
         {% for opportunity in page.object_list %}
-        <a class="application-row{% if selected.id == opportunity.id %} selected{% endif %}{% if opportunity.is_fresh %} fresh{% endif %}{% if opportunity.verification_status == 'expired' %} expired{% endif %}" href="?selected={{ opportunity.id }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_review %}&review={{ current_review }}{% endif %}">
+        <a class="application-row{% if selected.id == opportunity.id %} selected{% endif %}{% if opportunity.is_fresh %} fresh{% endif %}{% if opportunity.verification_status == 'expired' %} expired{% endif %}{% if opportunity.is_dead %} dead{% endif %}" href="?selected={{ opportunity.id }}{% if query %}&q={{ query|urlencode }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_review %}&review={{ current_review }}{% endif %}">
             {% if opportunity.verification_status == 'expired' or opportunity.japanese_only_inferred %}<span class="row-flags">{% if opportunity.verification_status == 'expired' %}<b class="edge-flag expired">Expired</b>{% endif %}{% if opportunity.japanese_only_inferred %}<b class="edge-flag japanese-only">日本語 only</b>{% endif %}</span>{% endif %}
             <span class="company-cell company-with-logo"><span class="list-company-logo">{% if opportunity.organization.logo_url %}<img src="{{ opportunity.organization.logo_url }}" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% elif opportunity.organization.website %}<img src="https://www.google.com/s2/favicons?domain_url={{ opportunity.organization.website|urlencode }}&sz=128" alt="" onerror="this.parentElement.textContent='{{ opportunity.organization.name|first|escapejs }}'">{% else %}{{ opportunity.organization.name|first }}{% endif %}</span><span><strong>{% if opportunity.is_favorite %}<b class="favorite-star">★</b>{% endif %}{{ opportunity.organization.name }}</strong><small>{{ opportunity.title }}{% if opportunity.location %} · {{ opportunity.location }}{% endif %}</small></span></span>
-            <span class="list-meta"><small>Industry</small><strong>{{ opportunity.company_industry|default:"Research needed" }}</strong></span>
-            <span class="list-meta"><small>Size</small><strong>{{ opportunity.company_size|default:"Research needed" }}</strong></span>
+            <span class="list-meta"><small>Industry</small><strong>{{ opportunity.company_industry|default:"—" }}</strong></span>
+            <span class="list-meta"><small>Size</small><strong>{{ opportunity.company_size|default:"—" }}</strong></span>
             <span class="match-cell match-{{ opportunity.match_tone }}">{% if opportunity.match_score != None %}{{ opportunity.match_score }}%{% else %}—{% endif %}</span>
-            <span class="status-stack"><em class="status-pill status-{{ opportunity.status }}">{{ opportunity.get_status_display }}</em>{% if opportunity.verification_status != 'expired' %}<small class="verification-{{ opportunity.verification_status }}">{{ opportunity.get_verification_status_display }}</small>{% endif %}</span>
+            <span class="status-stack">{% if opportunity.status == 'discovered' or opportunity.status == 'qualified' %}<em class="status-pill verification-{{ opportunity.verification_status }}">{{ opportunity.get_verification_status_display }}</em>{% else %}<em class="status-pill status-{{ opportunity.status }}">{{ opportunity.get_status_display }}</em>{% endif %}</span>
             <small class="row-next-action">{{ opportunity.next_action|default:"No action"|truncatewords:7 }}</small>
         </a>
         {% endfor %}

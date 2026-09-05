@@ -11,7 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count, Q
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.db import close_old_connections, transaction
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -186,6 +186,63 @@ def _incomplete_research_filter():
     )
 
 
+# Verdicts that mean "this is not a live opportunity any more".
+DEAD_VERDICTS = (
+    Opportunity.VerificationStatus.UNSUITABLE,
+    Opportunity.VerificationStatus.EXPIRED,
+    Opportunity.VerificationStatus.UNVERIFIED,
+)
+
+
+def _rank_by_liveness(queryset):
+    """Sink dead rows to the bottom and put the strongest live ones on top.
+
+    The list used to be ordered by nothing useful, so two expired 0% rows sat
+    above the 86% qualified one. Dead rows stay visible and labelled, they just
+    stop competing for the top of the screen.
+    """
+    return queryset.annotate(
+        is_dead=Case(
+            When(verification_status__in=DEAD_VERDICTS, then=Value(1)),
+            When(match_score__lte=5, then=Value(1)),
+            default=Value(0),
+            output_field=IntegerField(),
+        )
+    ).order_by("is_dead", "-match_score", "-created_at")
+
+
+def _today_list(queryset, limit=5):
+    """The few things actually worth his attention right now.
+
+    Deadlines first, because they expire whether or not he looks. Then the
+    strongest verified opportunities. Nothing dead ever appears here.
+    """
+    live = queryset.exclude(verification_status__in=DEAD_VERDICTS).exclude(deleted_at__isnull=False)
+    soon = timezone.localdate() + timedelta(days=21)
+    urgent = list(
+        live.filter(deadline__isnull=False, deadline__gte=timezone.localdate(), deadline__lte=soon)
+        .order_by("deadline")[:limit]
+    )
+    chosen = {item.id for item in urgent}
+    strong = [
+        item for item in live.filter(
+            verification_status=Opportunity.VerificationStatus.QUALIFIED,
+        ).order_by("-match_score")[:limit]
+        if item.id not in chosen
+    ]
+    chosen.update(item.id for item in strong)
+    rows = (urgent + strong)[:limit]
+    if len(rows) < limit:
+        rows += [
+            item for item in live.order_by("-match_score")[: limit * 2]
+            if item.id not in chosen
+        ][: limit - len(rows)]
+    for item in rows:
+        item.match_tone = _score_tone(item.match_score)
+        item.days_left = (item.deadline - timezone.localdate()).days if item.deadline else None
+    return rows
+
+
 def dashboard(request):
     # Each campaign is a separate job-hunt sheet: only the selected one is shown.
     active_campaign = SearchCampaign.objects.filter(is_active=True).first()
@@ -232,6 +289,7 @@ def dashboard(request):
             Opportunity.LinkCheck.LANDING_PAGE,
         ])
 
+    opportunities = _rank_by_liveness(opportunities)
     paginator = Paginator(opportunities, 25)
     page = paginator.get_page(request.GET.get("page"))
     selected = None
@@ -275,6 +333,7 @@ def dashboard(request):
             verification_status=Opportunity.VerificationStatus.CLARIFY,
         ).count(),
         "favorites_count": all_opportunities.filter(is_favorite=True).count(),
+        "today_rows": _today_list(all_opportunities) if not review and not query and not status else [],
         "needs_check_count": all_opportunities.filter(link_check_status__in=[
             Opportunity.LinkCheck.NOT_FOUND, Opportunity.LinkCheck.LANDING_PAGE,
         ]).count(),

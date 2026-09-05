@@ -99,6 +99,8 @@ when it is fixed, add one when Francesco reports something that is not fixed tod
 - **9 Indeed links can never be auto-checked.** Indeed serves HTTP 401 to any
   automated browser, so those rows sit at `unchecked` forever. That is honest, not
   a bug — never let `unchecked` count as evidence against a vacancy.
+- **The detail panel still shows "Research needed" as a company fact** in the
+  company strip, the same fallback that was removed from the list columns.
 - **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
   reverted in `d327198` / `6859116` after it crashed the running server. Redo it
   carefully, and tell Francesco to restart the server before he looks.

@@ -623,3 +623,34 @@ dd { margin: 0; }
     .robert-launcher { right: 0.8rem; bottom: 0.8rem; }
     .robert-panel { right: 0.6rem; bottom: 5rem; width: calc(100vw - 1.2rem); }
 }
+
+/* "What needs you" — the short ranked list that replaced four stat tiles, two of
+   which always read zero. Deadlines first, then the strongest verified matches. */
+.today-panel { margin-bottom: 1.1rem; border: 1px solid var(--line); border-radius: 1rem; background: white; padding: 0.3rem 0 0.15rem; }
+.today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; padding: 0.75rem 1rem 0.6rem; }
+.today-head h2 { margin: 0; font-size: 1rem; }
+.today-head small { color: var(--muted); font-size: 0.7rem; }
+.today-row { display: grid; align-items: center; grid-template-columns: 4.4rem minmax(0, 1fr) minmax(0, 15rem); gap: 0.8rem; border-top: 1px solid var(--line); padding: 0.6rem 1rem; color: #1a243a; text-decoration: none; }
+.today-row:hover { background: #eeedff; }
+.today-when { display: inline-flex; justify-content: center; border-radius: 999px; background: #f0f1f5; padding: 0.26rem 0.5rem; font-size: 0.7rem; font-weight: 800; }
+.today-when.urgent { background: #fde7e7; color: #a23131; }
+.today-when.match-high { background: #d8f6e8; color: #0b6e5a; }
+.today-when.match-mixed { background: #fff3d2; color: #8a5800; }
+.today-when.match-low { background: #fde7e7; color: #a23131; }
+.today-what { min-width: 0; }
+.today-what strong { display: block; overflow: hidden; font-size: 0.82rem; text-overflow: ellipsis; white-space: nowrap; }
+.today-what small { display: block; overflow: hidden; color: var(--muted); font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.today-next { overflow: hidden; color: var(--muted); font-size: 0.7rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Expired, unsuitable and near-zero matches stay visible and labelled, but stop
+   competing with live opportunities for the top of the screen. */
+.application-row.dead { opacity: 0.55; }
+.application-row.dead:hover { opacity: 1; }
+
+@media (max-width: 720px) {
+    .today-row { grid-template-columns: 3.9rem minmax(0, 1fr); }
+    .today-next { display: none; }
+}
+/* Once there are opportunities, the discovery bar is a toolbar, not onboarding. */
+.discovery-bar h2 { font-size: 1rem; }
+.discovery-bar p { font-size: 0.78rem; }

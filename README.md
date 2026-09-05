@@ -32,7 +32,10 @@ The application runs only while that terminal command is active. Press
   a time, Applications shows only that campaign's saved roles, and switching is
   one click on the Search rules page. Nothing is deleted when you switch.
 - Add and edit advertised jobs or cold-outreach targets
-- Search and filter applications, with pagination for large lists
+- Open on a short "What needs you" list: nearest deadlines first, then the
+  strongest verified matches, each with its next action
+- Search and filter applications, with pagination for large lists. Expired and
+  unsuitable rows sink to the bottom and dim instead of crowding the top
 - Track match score, status, next action, deadlines, and CV submission date
 - Save a long personal description
 - Talk with Robert in a profile interview that maintains an editable live draft
