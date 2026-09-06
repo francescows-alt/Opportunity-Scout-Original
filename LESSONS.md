@@ -248,3 +248,21 @@ underneath, for the assistant only. Nothing said out loud to him contains a file
 name, function name, setting or commit hash. And a session does not open by
 reciting the list — it names the one thing that matters most and proposes to do
 it.
+
+---
+
+## 2026-09-06 — Codex was never given the rules
+
+**What happened.** Asked how the project should be set up so both assistants can
+work on it properly, I looked and found there was no `AGENTS.md`. Codex reads
+`AGENTS.md`; Claude reads `CLAUDE.md`. Only `CLAUDE.md` existed. Every rule
+Francesco had taught over weeks — do not spend his money without a click, never
+apply on his behalf, keep expired roles labelled, be concise — was visible to one
+assistant and invisible to the other.
+
+**Why it mattered.** He had assumed correcting one assistant corrected the
+project. It did not. Half the lessons in this file were being enforced half the
+time, which looks from his side like an assistant that keeps forgetting.
+
+**Rule now.** `AGENTS.md` is a symlink to `CLAUDE.md`: one file, both assistants,
+no drift. If a rule is worth writing, it goes in that file, not in a session.

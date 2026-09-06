@@ -1,11 +1,20 @@
-# Claude project handoff
+# Project handoff
 
-This is Francesco's private local internship-search application. Read `README.md`,
-`LESSONS.md` and the latest Git history before changing anything.
+Read this whoever you are. `AGENTS.md` and `CLAUDE.md` are the same file, so Codex
+and Claude get identical instructions and neither can drift off on its own set of
+rules.
 
-`LESSONS.md` is the mistake log for both Claude and Codex. Every rule below came
-from a real failure recorded there. When Francesco corrects you, add the entry
-yourself, the same day, without being asked.
+This is Francesco's private local internship-search application. Read
+`PROJECT_BRIEF.md` for what it is for, then `README.md`, `LESSONS.md` and the
+latest Git history, before changing anything.
+
+`LESSONS.md` is the shared mistake log. Every rule below came from a real failure
+recorded there. When Francesco corrects you, add the entry yourself, the same day,
+without being asked, so the other assistant cannot repeat it.
+
+Francesco is not an engineer. He cannot review your code, so the only way he can
+judge your work is by using the app and by what you tell him. That makes an
+unverified claim of success worse than saying you are stuck.
 
 ## Product rules
 
@@ -79,6 +88,22 @@ apply, email or contact anyone.
 4. Run `.venv/bin/python manage.py test` and `.venv/bin/python manage.py check`.
 5. Tell Francesco what changed in plain language.
 6. Make a Git checkpoint only after tests pass.
+
+## Two assistants, one repository
+
+Codex and Claude both work here, and they cannot see each other. Git is the only
+place they meet.
+
+1. Start by running `git status --short` and reading the last few commits. If
+   there are changes you did not make, stop and ask Francesco whether the other
+   assistant is mid-task. Never overwrite work you cannot explain.
+2. Finish and commit before you stop. Uncommitted work is invisible to the other
+   assistant and is lost when a session is cleared.
+3. Write commit messages for a person who was not there: what was wrong, what you
+   changed, and what you could not verify. That message is the handover.
+4. Keep the notes current in the same commit as the change — the outstanding-work
+   list below, `README.md` for behaviour, `LESSONS.md` for a mistake. A fix that
+   is not written down will be re-broken.
 
 ## Outstanding work
 
