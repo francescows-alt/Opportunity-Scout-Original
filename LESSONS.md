@@ -223,3 +223,28 @@ the problem was solved meant the bug stayed, and he found it before I did.
 first — `grep "objects.create"` — and fix all of them. Then check the real
 database for evidence the rule has actually fired. A counter that reads zero after
 four runs means the feature does not work, whatever the tests say.
+
+---
+
+## 2026-09-06 — A handover written for engineers, given to a beginner
+
+**What happened.** Asked where we left off, I answered with a list of eight
+problems containing a commit hash, two function names, a settings value and three
+database field names. *"you reference, like, strings of code and things I don't
+really understand ... I have no technical knowledge."* He also said it feels like
+each session does not understand the project and picks off trivial things.
+
+**Why it mattered.** He was right about the cause, and it was not Codex versus
+Claude. The handover between sessions happens entirely through the notes in this
+repository, and those notes had been written by assistants, for assistants: a
+to-do list of code details with no sense of what the app is for or what hurts him
+most. A new session reads that list, sees eight equal-looking items, and starts
+on whichever is easiest. Meanwhile the owner cannot read the list at all, so he
+cannot correct the order.
+
+**Rule now.** The outstanding-work list is written as what Francesco sees, in his
+words, ordered by how much it hurts him; the code detail lives in an indented note
+underneath, for the assistant only. Nothing said out loud to him contains a file
+name, function name, setting or commit hash. And a session does not open by
+reciting the list — it names the one thing that matters most and proposes to do
+it.

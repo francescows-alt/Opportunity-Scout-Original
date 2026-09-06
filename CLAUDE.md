@@ -30,6 +30,12 @@ yourself, the same day, without being asked.
 - Lead with the blocker, limitation or risk in the FIRST line. Never bury it.
 - Be concise. Default to under 150 words. Long reports only when he asks.
 - Say what you cannot verify BEFORE doing the work, not afterwards.
+- No code in what you say to him. No file names, function names, settings,
+  commit hashes or field names. He is not an engineer and cannot check them.
+  Name the thing he sees on screen and what it does wrong. Keep the code detail
+  in this file and in commit messages, where it belongs.
+- Never hand him a list of problems as an opening. Tell him the one that hurts
+  most and what you propose to do about it.
 
 ## Do not ask permission
 
@@ -76,36 +82,40 @@ apply, email or contact anyone.
 
 ## Outstanding work
 
-Known problems, roughly in priority order. Keep this list current: delete an item
-when it is fixed, add one when Francesco reports something that is not fixed today.
+Write every item as the thing Francesco sees, in his words. Keep the code detail
+in the indented note underneath, for you, not for him. Order by how much it hurts
+him, not by how interesting it is to fix. Delete an item when it is fixed; add one
+the day he reports it.
 
-- **Inbox items are never analysed by AI.** The Inbox accepts pasted vacancies,
-  links, screenshots and PDFs, but nothing turns them into researched
-  opportunities. Highest-value gap.
-- **Search quality is not good enough.** Francesco's words. The evidence layer
-  now exists (`b13be4a`): each `SearchCycle` stores `raw_results` and
-  `rejections`, every opportunity links back to its `search_cycle`, and the
-  detail panel has a good/bad button writing `quality_flag` and `quality_note`.
-  The loop is closed: `_quality_feedback()` sends his flags into every later
-  search as USER VERDICTS. Each search now learns from the last. Still do not
-  guess at prompt wording — read his flags first.
-- **`max_tool_calls=8` versus "up to 12 results"** in `ai.py` `research_internships()`.
-  This is the DISCOVERY call only; research was fixed separately. Eight web
-  searches cannot support twelve well-sourced findings. Raising it raises the
-  per-search cost, so it is his call.
-- **Research cost is estimated, not measured.** `RESEARCH_WEB_COST` in `ai.py` is
-  a guess of $0.04 per internship. Replace it with a real figure once a deep run
-  has happened, and tell him what it actually cost.
-- **9 Indeed links can never be auto-checked.** Indeed serves HTTP 401 to any
-  automated browser, so those rows sit at `unchecked` forever. That is honest, not
-  a bug — never let `unchecked` count as evidence against a vacancy.
-- **The detail panel still shows "Research needed" as a company fact** in the
-  company strip, the same fallback that was removed from the list columns.
-- **Icons are inconsistent Unicode glyphs.** An SVG icon set was attempted and
-  reverted in `d327198` / `6859116` after it crashed the running server. Redo it
-  carefully, and tell Francesco to restart the server before he looks.
-- **`ai.py` `_compact_app_context()` is not campaign-scoped.** Robert sees the 20
-  most recent opportunities across every campaign, not just the active one.
+- **The Inbox does nothing.** He pastes a vacancy, a link, a screenshot or a PDF
+  and it just sits there. Nothing researches it, nothing turns it into a row he
+  can act on. This is the biggest hole in the app.
+  *Note: the capture side works; there is no analysis step wired to it.*
+- **The searches still bring back weak results.** His words: not good enough.
+  Every search now keeps its workings and learns from the good/bad button he
+  presses on a result, so before touching how Robert is asked to search, read
+  what he actually flagged as bad. Do not guess.
+  *Note: `SearchCycle.raw_results`/`rejections`, `quality_flag`, `_quality_feedback()`.*
+- **One search may be looking too little to find twelve good things.** A search
+  is allowed eight looks around the web but is asked for up to twelve findings.
+  More looking costs more money per search, so it is his decision, not yours.
+  *Note: `max_tool_calls=8` in `research_internships()` in `ai.py`, discovery call only.*
+- **The cost shown per researched internship is a guess.** About four cents was
+  invented, never measured. After a real deep run, tell him what it truly cost
+  and replace the number.
+  *Note: `RESEARCH_WEB_COST` in `ai.py`.*
+- **Nine Indeed links can never be checked automatically.** Indeed blocks robots,
+  so those rows stay "not checked" forever. That is honest, not a bug — never
+  treat "not checked" as proof a job is dead.
+- **A detail panel still says "Research needed" as if it were a fact about the
+  company.** Same wrong fallback that was already removed from the list columns.
+- **The little symbols around the app are a mismatched set.** A proper icon set
+  was tried and reverted because it crashed his running server. Redo it carefully
+  and tell him to restart the server before he looks.
+  *Note: reverted in `d327198` / `6859116`.*
+- **Robert can see internships from campaigns Francesco is not working on.** The
+  twenty most recent are pulled across all campaigns instead of the current one.
+  *Note: `_compact_app_context()` in `ai.py`.*
 
 ## Restarting after a break
 
