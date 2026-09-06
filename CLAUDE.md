@@ -1,109 +1,92 @@
 # Project handoff
 
-Read this whoever you are. `AGENTS.md` and `CLAUDE.md` are the same file, so Codex
-and Claude get identical instructions and neither can drift off on its own set of
-rules.
+`AGENTS.md` and `CLAUDE.md` are the same file, so Codex and Claude get identical
+rules and neither drifts. Read this, then `README.md` for what the app does and
+`PROJECT_BRIEF.md` for what the search is for. Open `LESSONS.md` only when a rule
+here needs its story; the standing rules at the top of that file are the summary.
 
-This is Francesco's private local internship-search application. Read
-`PROJECT_BRIEF.md` for what it is for, then `README.md`, `LESSONS.md` and the
-latest Git history, before changing anything.
+Francesco is not an engineer. He cannot review your code, so he can only judge
+your work by using the app and by what you tell him. An unverified claim of
+success is worse than saying you are stuck.
 
-`LESSONS.md` is the shared mistake log. Every rule below came from a real failure
-recorded there. When Francesco corrects you, add the entry yourself, the same day,
-without being asked, so the other assistant cannot repeat it.
+## Never
 
-Francesco is not an engineer. He cannot review your code, so the only way he can
-judge your work is by using the app and by what you tell him. That makes an
-unverified claim of success worse than saying you are stuck.
+- Never apply, email, contact or submit anything on his behalf.
+- Never read, print or commit `.env`. The OpenAI key lives there.
+- Never invent a candidate fact or a job fact. Robert cites its sources.
+- Never blur verified facts into assumptions or AI conclusions. Store the source
+  and the date for every job, company and contact fact.
+- Never collect leaked, hidden or private contact details. Public professional
+  contact information only.
 
-## Product rules
+## Ask him for two things only
 
-- Explain software simply: the owner is a beginner.
-- Robert researches truthfully and cites sources. Never invent candidate or job facts.
-- Never apply, email, contact, or submit anything without explicit user approval.
-- Do not require an employer to call a role a "graduation" or "thesis" internship.
-  Judge whether the real dates can cover February–June 2027. Longer can fit;
-  shorter needs clarification.
-- Language rule: when the whole substantive announcement is in Japanese and no
-  exact Japanese level is stated, classify and visibly label it `Japanese-only
-  (inferred)`. Keep it in the main list for reference. Do not confuse this
-  inference with an employer explicitly requiring native fluency.
-- Exclude candidate-paid placement programs; do not confuse these with relocation costs.
-- Preserve expired opportunities but label them clearly.
-- Prevent duplicate companies/roles across repeated search cycles.
-- Keep the interface compact, practical, visually polished, and able to scale to
-  hundreds of applications.
+1. **Spending money** — a Robert search, research run or inbox analysis. His
+   click. Never infer it from "make it work", "fix it", "go" or "just do
+   everything": those authorise building and mocked tests, never a real paid
+   call. Build the feature, test it with mocks, then hand him the button.
+2. **Design direction** — a visual or product taste decision that is his.
 
-## Communication
+Everything else — commands, refactors, migrations, fixes, tests, commits — just
+do, then report what you did.
 
-- Lead with the blocker, limitation or risk in the FIRST line. Never bury it.
-- Be concise. Default to under 150 words. Long reports only when he asks.
-- Say what you cannot verify BEFORE doing the work, not afterwards.
-- No code in what you say to him. No file names, function names, settings,
-  commit hashes or field names. He is not an engineer and cannot check them.
-  Name the thing he sees on screen and what it does wrong. Keep the code detail
-  in this file and in commit messages, where it belongs.
-- Never hand him a list of problems as an opening. Tell him the one that hurts
-  most and what you propose to do about it.
+## How to talk to him
 
-## Do not ask permission
+- Blocker, limitation or risk in the FIRST line. Never bury it.
+- Under 150 words unless he asks for more.
+- Say what you cannot verify BEFORE doing the work, not after.
+- No code in anything you say to him: no file names, function names, settings,
+  commit hashes or field names. Name what he sees on screen and what it does
+  wrong. Code detail belongs in this file and in commit messages.
+- Never open with a list of problems. Name the one that hurts most and propose it.
+- Explain software simply. He is a beginner.
 
-Run every command and make every ordinary change without asking, then report what
-you did. Stop and ask for only two things:
+## Judgement the code cannot make
 
-1. **Spending money** — a Robert search, research run or inbox analysis. His click.
-   Never infer this from "make it work", "fix it", "go" or "just do everything".
-   Those authorise building and mocked tests, never a real paid call. Build the
-   feature, test it with mocks, then hand him the button.
-2. **Design direction** — a visual or product taste decision that is genuinely his.
+- Do not require an employer to call a role a "graduation" or "thesis"
+  internship. Judge whether the real dates can cover February–June 2027. Longer
+  can fit; shorter needs clarification.
+- When the whole substantive announcement is in Japanese and no exact level is
+  stated, label it `Japanese-only (inferred)` and keep it in the main list. That
+  is not the same as an employer explicitly requiring native fluency.
+- Exclude candidate-paid placement programmes. Relocation costs are not that.
+- Keep expired opportunities, clearly labelled.
+- Never let a company or role reappear across search cycles.
+- Keep the interface compact, practical, polished, and able to scale to hundreds
+  of applications.
 
-Commands, refactors, migrations, fixes, tests and commits: just do them. The
-safety rules are separate and never relax — never read or print `.env`, never
-apply, email or contact anyone.
-
-## Verification
+## Verifying before you ship
 
 - If you cannot verify it, do not ship it.
-- **Look at the page yourself.** Run
-  `.venv/bin/python tools/screenshot.py /inbox/` and open the PNG it writes to
-  `.screenshots/`. It starts its own throwaway server on a free port, so
-  Francesco's `runserver` can keep running. Useful flags: `--width 480` for
-  mobile, `--viewport-only`, `--wait-ms`. The script reports the HTTP status and
-  any JavaScript errors.
-- Screenshot every template, CSS or layout change **before** committing it, and
-  before asking Francesco to look. Asking him to be your eyes is a last resort,
-  not the process.
+- Tests: `.venv/bin/python manage.py test` and `.venv/bin/python manage.py check`.
+- Look at the page yourself: `.venv/bin/python tools/screenshot.py /inbox/` writes
+  a PNG to `.screenshots/`. It starts its own throwaway server on a free port, so
+  his `runserver` keeps working. Flags: `--width 480`, `--viewport-only`,
+  `--wait-ms`. It reports the HTTP status and any JavaScript errors.
+- Screenshot every template, CSS or layout change before committing and before
+  asking him to look. Asking him to be your eyes is a last resort.
 - Tests and `curl` run in a fresh process; his browser does not. Neither proves
   the page renders for him.
-- After adding any new Python file, tell Francesco to restart the server.
-  Django does not always pick up new files while running.
-- If a limitation is blocking verification, fix the limitation. Do not build a
-  workflow around it and hand him the manual work. See `LESSONS.md`.
-
-## Development workflow
-
-1. Run `git status --short` and read recent commits before editing.
-2. Never overwrite unexplained existing changes. Ask if another assistant may be editing.
-3. Make one focused change at a time.
-4. Run `.venv/bin/python manage.py test` and `.venv/bin/python manage.py check`.
-5. Tell Francesco what changed in plain language.
-6. Make a Git checkpoint only after tests pass.
+- After adding any new Python file, tell him to restart the server. Django does
+  not always pick up new files while running.
+- If a limitation blocks verification, fix the limitation. Do not build a manual
+  workflow around it and hand him the work.
 
 ## Two assistants, one repository
 
-Codex and Claude both work here, and they cannot see each other. Git is the only
-place they meet.
+Codex and Claude cannot see each other. Git is the only place they meet.
 
-1. Start by running `git status --short` and reading the last few commits. If
-   there are changes you did not make, stop and ask Francesco whether the other
-   assistant is mid-task. Never overwrite work you cannot explain.
-2. Finish and commit before you stop. Uncommitted work is invisible to the other
-   assistant and is lost when a session is cleared.
-3. Write commit messages for a person who was not there: what was wrong, what you
-   changed, and what you could not verify. That message is the handover.
-4. Keep the notes current in the same commit as the change — the outstanding-work
-   list below, `README.md` for behaviour, `LESSONS.md` for a mistake. A fix that
-   is not written down will be re-broken.
+1. Run `git status --short` and read the last few commits before editing. If
+   there are changes you did not make, ask whether the other assistant is
+   mid-task. Never overwrite work you cannot explain.
+2. One focused change at a time.
+3. Commit before you stop, and only after the tests pass. Uncommitted work is
+   invisible to the other assistant and is lost when a session is cleared.
+4. Write the commit message for someone who was not there: what was wrong, what
+   you changed, what you could not verify. That message is the handover.
+5. Update the notes in the same commit — the list below for an unfinished
+   problem, `README.md` for behaviour, `LESSONS.md` for a mistake he corrected.
+   A fix that is not written down will be re-broken.
 
 ## Outstanding work
 
@@ -142,10 +125,10 @@ the day he reports it.
   twenty most recent are pulled across all campaigns instead of the current one.
   *Note: `_compact_app_context()` in `ai.py`.*
 
-## Restarting after a break
+## Keeping these notes worth reading
 
-Anything not written down is gone when a session is cleared. Before finishing a
-piece of work, put it somewhere durable: code and tests in Git, behaviour in
-`README.md`, unfinished problems in the list above.
-
-The OpenAI key is stored locally in `.env`. Never print, expose, or commit it.
+Anything not written down is gone when a session is cleared. But length has a
+cost: past about 150 lines these files stop helping and start burying the rules
+that matter. Before adding a rule here, delete one that no longer earns its
+place, or write it in `LESSONS.md` instead. Only genuine repeat mistakes and
+facts an assistant cannot work out from the code belong in this file.

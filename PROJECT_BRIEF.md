@@ -9,17 +9,13 @@ the software must not hard-code that search into the product.
 
 ## Non-negotiable rules
 
-- Keep the initial version free to run locally.
-- Explain any possible paid service and obtain approval before enabling it.
-- Never apply, send an email, or contact anyone without the user's explicit
-  approval of the exact action and content.
-- Never invent education, experience, skills, language ability, achievements,
-  or other claims.
-- Keep verified facts separate from assumptions and AI-generated conclusions.
-- Store the source and retrieval date for job, company, and contact information.
-- Use public professional contact information only. Do not collect leaked,
-  hidden, or private personal contact information.
-- Make search preferences editable and support multiple searches over time.
+These live in one place only, `CLAUDE.md`, so they cannot drift apart: never act
+on his behalf, never invent a fact, never spend without his click, keep verified
+facts separate from assumptions, store the source and date of every job and
+company fact, and use public professional contact information only.
+
+Search preferences must stay editable, and the software must support many
+searches over time. The first campaign below is not a permanent limitation.
 
 ## Current search campaign
 
@@ -95,32 +91,22 @@ research-access, and February–June 2027 requirements.
 9. Pipeline: stages and a history of actions, decisions, and outcomes.
 10. Automation: searches and reminders with limits, logs, and approval gates.
 
-## First working version
+## What the app does today
 
-The first version will run only on the user's computer and will not use paid
-APIs. It will allow the user to:
-
-- create and edit a search campaign;
-- manually add an organization or opportunity;
-- view and edit saved opportunities;
-- move an opportunity through a configurable pipeline;
-- record notes, source links, deadlines, and activity history;
-- keep advertised opportunities distinct from cold-outreach targets.
-
-It will not yet search the web, evaluate fit with AI, find contacts, draft
-messages, send messages, or submit applications.
+See "Current scope" in `README.md`, which is kept current. In short: it runs
+locally, creates and edits campaigns, searches the web with AI, researches each
+opportunity with sources, captures pasted vacancies and files, evaluates fit,
+and tracks everything through a pipeline. It does not send messages or submit
+applications, and it never will without his approval of the exact content.
 
 ## Cost policy
 
-- Local application, programming language, framework, database, tests, Git,
-  and GitHub: target cost of zero.
-- Prefer public pages, permitted feeds, official APIs with useful free tiers,
-  and manual imports before paid data services.
-- AI inside the future application may require separately billed API usage.
-  It must be optional, usage-limited, and visible to the user.
-- Reliable daily operation may eventually require low-cost hosting because a
-  sleeping laptop cannot run searches. This is not required for version one.
-- Show estimated or actual usage costs in the product before automations run.
+Paid AI is now in use and is no longer free to run; the money rule in `CLAUDE.md`
+governs every call. What remains true here: prefer public pages, permitted feeds
+and official free tiers before paid data services, show the estimated or actual
+cost in the product before an automation runs, and expect that reliable daily
+operation may one day need low-cost hosting, because a sleeping laptop cannot run
+searches.
 
 ## Decisions still needed
 
